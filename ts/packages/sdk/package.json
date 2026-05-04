@@ -46,6 +46,26 @@
         "types": "./dist/adapters/fastify.d.cts",
         "default": "./dist/adapters/fastify.cjs"
       }
+    },
+    "./nest": {
+      "import": {
+        "types": "./dist/adapters/nest.d.ts",
+        "default": "./dist/adapters/nest.js"
+      },
+      "require": {
+        "types": "./dist/adapters/nest.d.cts",
+        "default": "./dist/adapters/nest.cjs"
+      }
+    },
+    "./koa": {
+      "import": {
+        "types": "./dist/adapters/koa.d.ts",
+        "default": "./dist/adapters/koa.js"
+      },
+      "require": {
+        "types": "./dist/adapters/koa.d.cts",
+        "default": "./dist/adapters/koa.cjs"
+      }
     }
   },
   "scripts": {
@@ -81,7 +101,8 @@
   },
   "peerDependencies": {
     "express": ">=4",
-    "fastify": ">=4"
+    "fastify": ">=4",
+    "koa": ">=2"
   },
   "peerDependenciesMeta": {
     "express": {
@@ -89,12 +110,17 @@
     },
     "fastify": {
       "optional": true
+    },
+    "koa": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@types/express": "^4.17.25",
+    "@types/koa": "^3.0.2",
     "express": "^4.22.1",
     "fastify": "^5.8.5",
-    "hono": "^4.12.16"
+    "hono": "^4.12.16",
+    "koa": "^3.0.0"
   }
 }

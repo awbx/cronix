@@ -160,6 +160,16 @@ rawBody(app);
 app.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
 app.all(`${TRIGGER_PATH_PREFIX}:name`, handle((req) => cron.handle(req)));
 
+// Koa (mount before any body-parser middleware so HMAC sees the raw bytes)
+import { handle } from "@awbx/cronix-sdk/koa";
+router.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
+router.all(`${TRIGGER_PATH_PREFIX}:name`, handle((req) => cron.handle(req)));
+
+// NestJS (Express by default — bootstrap with `bodyParser: false`)
+import { handle } from "@awbx/cronix-sdk/nest";
+app.use(MANIFEST_PATH, handle((req) => cron.handle(req)));
+app.use(`${TRIGGER_PATH_PREFIX}:name`, handle((req) => cron.handle(req)));
+
 // Vercel (Next.js route handlers / Edge functions — Web Request native)
 // app/api/cron/[[...slug]]/route.ts
 import { handle } from "@awbx/cronix-sdk/vercel";
