@@ -15,7 +15,7 @@ If you find a security issue in cronix — particularly anything that:
 
 Include:
 
-- Affected version (`cronix version` for binaries, `@cronix/sdk` version for the TS SDK).
+- Affected version (`cronix version` for binaries, `@awbx/cronix-sdk` version for the TS SDK).
 - Reproduction steps or proof of concept.
 - Your suggested severity assessment.
 
@@ -26,7 +26,7 @@ We will acknowledge within 72 hours, work with you on a fix, and credit you in t
 In-scope:
 
 - The reference Go binary (`cmd/cronix`).
-- The reference TypeScript SDK (`@cronix/sdk`).
+- The reference TypeScript SDK (`@awbx/cronix-sdk`).
 - The on-the-wire spec (HMAC scheme, manifest shape) — design weaknesses count.
 
 Out of scope:

@@ -6,13 +6,13 @@ Thanks for taking the time. cronix is pre-alpha; the surface is moving and contr
 
 - **The RFC is the product.** `spec/RFC.md` is authoritative. Code follows the RFC, not the other way around. New behavior starts as a `## Q-NNN:` entry in `spec/OPEN_QUESTIONS.md`, gets discussed, then promotes to a `## D-NNN:` decision before code lands.
 - **Conformance vectors are sacred.** `spec/manifest-vectors.json` and `spec/auth-vectors.json` are the cross-language correctness contract. Adding or modifying a vector is a spec change and requires an RFC update.
-- **Both languages stay in lock-step.** Any change to manifest shape, header format, or signing scheme must land in TypeScript (`@cronix/sdk`) and Go (`internal/manifest`, `internal/auth`) in the same PR, with both passing the shared vectors.
+- **Both languages stay in lock-step.** Any change to manifest shape, header format, or signing scheme must land in TypeScript (`@awbx/cronix-sdk`) and Go (`internal/manifest`, `internal/auth`) in the same PR, with both passing the shared vectors.
 
 ## Repo layout
 
 ```
 spec/    language-neutral RFC, decisions, JSON Schema, conformance vectors
-ts/      TypeScript pnpm workspace (@cronix/sdk + examples)
+ts/      TypeScript pnpm workspace (@awbx/cronix-sdk + examples)
 go/      Go module github.com/awbx/cronix/go (cmd, internal, pkg)
 deploy/  Dockerfile, Helm chart
 ```

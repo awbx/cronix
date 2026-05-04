@@ -1,5 +1,5 @@
 {
-  "name": "@cronix/sdk",
+  "name": "@awbx/cronix-sdk",
   "version": "0.0.0",
   "description": "App-side SDK for cronix: declare cron jobs in code, build the manifest, verify signed triggers. Framework-agnostic — wires into Express/Fastify/Hono/Workers/etc. in a few lines.",
   "type": "module",

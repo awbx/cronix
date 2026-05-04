@@ -2,7 +2,7 @@
   "name": "@cronix-example/fastify-app",
   "version": "0.0.0",
   "private": true,
-  "description": "Wiring @cronix/sdk into Fastify.",
+  "description": "Wiring @awbx/cronix-sdk into Fastify.",
   "type": "module",
   "scripts": {
     "dev": "tsx --watch src/index.ts",
@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cronix/sdk": "workspace:*",
+    "@awbx/cronix-sdk": "workspace:*",
     "fastify": "^5.2.0"
   },
   "devDependencies": {

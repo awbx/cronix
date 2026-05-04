@@ -17,7 +17,7 @@ The protocol is the product. The reconciler and SDK are reference implementation
 ```
 cronix/
 ├── spec/         # language-neutral: RFC, DECISIONS, JSON Schema, conformance vectors
-├── ts/           # TypeScript workspace (pnpm) — @cronix/sdk + framework adapters + examples
+├── ts/           # TypeScript workspace (pnpm) — @awbx/cronix-sdk + framework adapters + examples
 ├── go/           # Go module (github.com/awbx/cronix/go) — cmd/cronix binary + internal/ + pkg/cronsdk
 ├── deploy/       # Dockerfile, Helm chart — language-neutral
 ├── .github/      # CI workflows
@@ -88,7 +88,7 @@ goreleaser build --snapshot --clean
 go install github.com/awbx/cronix/go/cmd/cronix@latest
 
 # TypeScript SDK (once published — Phase 7)
-pnpm add @cronix/sdk
+pnpm add @awbx/cronix-sdk
 ```
 
 ## License

@@ -1,4 +1,4 @@
-import { createCron, MANIFEST_PATH } from "@cronix/sdk";
+import { createCron, MANIFEST_PATH } from "@awbx/cronix-sdk";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 

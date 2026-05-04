@@ -1,5 +1,5 @@
 {
-  "$comment": "Conformance vectors for cronix manifest parsing and normalization. Every implementation (TS @cronix/sdk, Go internal/manifest, future SDKs) must agree on every vector. For valid vectors, parseManifest(input) succeeds and canonicalize(applyDefaults(parsed)) === expected. For invalid vectors, parseManifest(input) fails; the implementation MAY surface a different error message but MUST surface at least one issue at the listed errorPaths (joined with '/'). Add new vectors only with an RFC update.",
+  "$comment": "Conformance vectors for cronix manifest parsing and normalization. Every implementation (TS @awbx/cronix-sdk, Go internal/manifest, future SDKs) must agree on every vector. For valid vectors, parseManifest(input) succeeds and canonicalize(applyDefaults(parsed)) === expected. For invalid vectors, parseManifest(input) fails; the implementation MAY surface a different error message but MUST surface at least one issue at the listed errorPaths (joined with '/'). Add new vectors only with an RFC update.",
   "version": 1,
   "vectors": [
     {
