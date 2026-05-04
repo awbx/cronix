@@ -46,6 +46,13 @@ export type CreateCronOptions<E extends CronEnv = DefaultEnv> = {
   secret: string | string[] | (() => string | string[]);
   /** App-scoped bindings available as `ctx.env` to every handler. Hono parity: `env`. */
   env?: E["Bindings"];
+  /**
+   * Default per-fire variables. Merged with anything passed to
+   * `cron.handle(req, {vars})` (or `verifyTrigger`/`verifyManifest`); the
+   * per-fire `vars` win on key collisions. Useful for app-wide defaults
+   * (e.g. a fixed `region` or `service` tag) that any route can override.
+   */
+  vars?: E["Variables"];
 };
 
 /**
@@ -85,6 +92,7 @@ export function createCron<E extends CronEnv = DefaultEnv>(options: CreateCronOp
   const jobs = new Map<string, { def: JobDefinition<E> }>();
   const handlers = new Map<string, JobHandler<E>>();
   const bindings = (options.env ?? {}) as NonNullable<E["Bindings"]>;
+  const defaultVars = (options.vars ?? {}) as Record<string, unknown>;
 
   const resolveSecrets = (): string[] => {
     const raw = typeof options.secret === "function" ? options.secret() : options.secret;
@@ -216,7 +224,10 @@ export function createCron<E extends CronEnv = DefaultEnv>(options: CreateCronOp
     if (!jobs.has(name)) {
       return errorResult(HTTP_NOT_FOUND, "UnknownJob", `no registered job named ${name}`);
     }
-    const ctx = buildContext<E>(options.app, name, n, bindings, opts?.vars as NonNullable<E["Variables"]> | undefined);
+    const mergedVars = { ...defaultVars, ...((opts?.vars ?? {}) as Record<string, unknown>) } as NonNullable<
+      E["Variables"]
+    >;
+    const ctx = buildContext<E>(options.app, name, n, bindings, mergedVars);
     return {
       ok: true,
       secretIndex: r.secretIndex,
