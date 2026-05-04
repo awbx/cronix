@@ -5,7 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh | sh
 #
 # Pin a version or change the install directory:
-#   curl -fsSL .../install.sh | CRONIX_VERSION=v0.1.1 INSTALL_DIR=/usr/local/bin sh
+#   curl -fsSL .../install.sh | CRONIX_VERSION=v0.4.0 INSTALL_DIR=/usr/local/bin sh
 set -eu
 
 REPO="awbx/cronix"
