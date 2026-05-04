@@ -7,8 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/manifest"
 )
+
+func backendsHistoryOpts(app, job string) backends.HistoryOpts {
+	return backends.HistoryOpts{App: app, Job: job}
+}
 
 func sampleJob(name string, schedules ...string) manifest.NormalizedJob {
 	return manifest.NormalizedJob{
@@ -238,6 +243,92 @@ func TestDeleteRemovesAllOwnedUnits(t *testing.T) {
 	}
 	if reloads != 1 {
 		t.Errorf("expected 1 daemon-reload after delete, got %d (%v)", reloads, exec.calls)
+	}
+}
+
+// recordingJournalctl returns canned bytes per call. Args are recorded
+// for assertion.
+type recordingJournalctl struct {
+	calls [][]string
+	out   []byte
+}
+
+func (r *recordingJournalctl) Run(_ context.Context, args ...string) ([]byte, error) {
+	r.calls = append(r.calls, append([]string(nil), args...))
+	return r.out, nil
+}
+
+func TestHistoryFoldsAttemptsIntoRuns(t *testing.T) {
+	dir := t.TempDir()
+	jx := &recordingJournalctl{
+		// Three records: one successful run, one failed run with two attempts.
+		out: []byte(`{"__REALTIME_TIMESTAMP":"1714820000000000","_SYSTEMD_UNIT":"cronix-billing-reconcile-0.service","MESSAGE":"{\"time\":\"2026-05-04T12:33:20Z\",\"level\":\"INFO\",\"msg\":\"trigger: success\",\"run_id\":\"run-A\",\"status\":200,\"attempt\":1}"}
+{"__REALTIME_TIMESTAMP":"1714820100000000","_SYSTEMD_UNIT":"cronix-billing-reconcile-0.service","MESSAGE":"{\"time\":\"2026-05-04T12:35:00Z\",\"level\":\"WARN\",\"msg\":\"trigger: server error\",\"run_id\":\"run-B\",\"status\":500,\"attempt\":1}"}
+{"__REALTIME_TIMESTAMP":"1714820200000000","_SYSTEMD_UNIT":"cronix-billing-reconcile-0.service","MESSAGE":"{\"time\":\"2026-05-04T12:36:40Z\",\"level\":\"ERROR\",\"msg\":\"trigger: retries exhausted\",\"run_id\":\"run-B\",\"status\":500,\"attempt\":3}"}
+`),
+	}
+	b, err := New(Options{
+		UnitDir:    dir,
+		TriggerBin: "/usr/local/bin/cronix",
+		Systemctl:  &recordingExec{},
+		Journalctl: jx,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	entries, err := b.History(context.Background(), backendsHistoryOpts("billing", "reconcile"))
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 history entries (one per run_id), got %d: %+v", len(entries), entries)
+	}
+	if entries[0].RunID != "run-A" || entries[0].Status != "ok" || entries[0].App != "billing" || entries[0].Job != "reconcile" {
+		t.Errorf("first entry wrong: %+v", entries[0])
+	}
+	if entries[1].RunID != "run-B" || entries[1].Status != "failed" || entries[1].Attempt != 3 {
+		t.Errorf("second entry wrong: %+v", entries[1])
+	}
+	// Verify the journalctl invocation passed through the unit-glob arg.
+	if len(jx.calls) != 1 {
+		t.Fatalf("expected 1 journalctl call, got %d", len(jx.calls))
+	}
+	gotUnit := false
+	for i := 0; i < len(jx.calls[0])-1; i++ {
+		if jx.calls[0][i] == "--unit" && jx.calls[0][i+1] == "cronix-billing-reconcile-*.service" {
+			gotUnit = true
+			break
+		}
+	}
+	if !gotUnit {
+		t.Errorf("--unit arg missing from journalctl call: %v", jx.calls[0])
+	}
+}
+
+func TestHistoryStatusFilter(t *testing.T) {
+	dir := t.TempDir()
+	jx := &recordingJournalctl{
+		out: []byte(`{"__REALTIME_TIMESTAMP":"1714820000000000","_SYSTEMD_UNIT":"cronix-billing-reconcile-0.service","MESSAGE":"{\"msg\":\"trigger: success\",\"run_id\":\"run-A\",\"status\":200,\"attempt\":1}"}
+{"__REALTIME_TIMESTAMP":"1714820100000000","_SYSTEMD_UNIT":"cronix-billing-reconcile-0.service","MESSAGE":"{\"msg\":\"trigger: app rejected\",\"run_id\":\"run-B\",\"status\":401,\"attempt\":1}"}
+`),
+	}
+	b, _ := New(Options{UnitDir: dir, TriggerBin: "/usr/local/bin/cronix", Systemctl: &recordingExec{}, Journalctl: jx})
+	opts := backendsHistoryOpts("billing", "reconcile")
+	opts.Status = "failed"
+	entries, err := b.History(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(entries) != 1 || entries[0].RunID != "run-B" {
+		t.Errorf("expected only failed run filtered, got: %+v", entries)
+	}
+}
+
+func TestHistoryRequiresAppAndJob(t *testing.T) {
+	dir := t.TempDir()
+	b, _ := New(Options{UnitDir: dir, TriggerBin: "/usr/local/bin/cronix", Systemctl: &recordingExec{}, Journalctl: &recordingJournalctl{}})
+	if _, err := b.History(context.Background(), backendsHistoryOpts("", "")); err == nil {
+		t.Errorf("expected error when App+Job are empty")
 	}
 }
 
