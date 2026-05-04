@@ -4,8 +4,7 @@ project_name: cronix
 
 before:
   hooks:
-    - cmd: go mod tidy
-      dir: ./go
+    - sh -c "cd ./go && go mod tidy"
 
 builds:
   - id: cronix
