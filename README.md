@@ -54,7 +54,7 @@ Future SDKs (Python, Ruby, …) get their own top-level directory. The `spec/` d
 
 ## Status
 
-v1 release candidate. The on-the-wire spec is frozen; per-backend live integration for systemd-timer and kubernetes is the remaining follow-up. The authoritative on-the-wire spec lives in [spec/RFC.md](./spec/RFC.md). Implementation history is tracked in [PLAN.md](./PLAN.md).
+v1 release candidate. As of v0.3.0 all three backends — `crontab`, `systemd-timer`, `kubernetes` — fully reconcile against their host scheduler (`apply`, `plan`, `drift`, `list`, `prune`, `show`). The on-the-wire spec is frozen; remaining work is `cronix history` (run-record reads from journalctl / K8s logs) and the operator polish in PLAN §7. Authoritative spec: [spec/RFC.md](./spec/RFC.md). Implementation history: [PLAN.md](./PLAN.md).
 
 ## Documentation
 
