@@ -680,15 +680,138 @@ silently being ignored.
 
 ## Backend Adapter Contract
 
-*(Phase 5 will populate this.)*
+A backend adapter is a translator: it takes language-neutral
+`NormalizedJob` values and renders them into the host scheduler's native
+artifacts (a crontab line block, a systemd `.timer`/`.service` pair, a
+Kubernetes `CronJob` resource).
+
+The Go interface is defined in `go/internal/backends/backend.go`:
+
+```go
+type Backend interface {
+    Name() string
+    List(ctx context.Context) ([]ManagedEntry, error)
+    Create(ctx context.Context, app string, job NormalizedJob) error
+    Update(ctx context.Context, app string, job NormalizedJob) error
+    Delete(ctx context.Context, app, jobName string) error
+    Validate(job NormalizedJob) ValidationResult
+    History(ctx context.Context, opts HistoryOpts) ([]HistoryEntry, error)
+    Ensure(ctx context.Context) error
+}
+```
+
+Contract requirements:
+
+- **Ownership**: every artifact `Create` produces MUST carry an
+  unforgeable cronix marker (D-026). `List` MUST return only owned
+  artifacts. `Delete` MUST refuse to delete artifacts cronix did not
+  create.
+- **Multi-schedule**: a job with N schedules produces N owned entries
+  with distinct `index` values 0..N-1. `Update` and `Delete` operate
+  per (app, job) — the reconciler always updates or deletes all
+  schedules of a job atomically.
+- **Idempotency**: `List` is read-only. `Update` of an unchanged job
+  MAY rewrite files but MUST NOT cause user-visible side effects (no
+  `systemctl daemon-reload` when content is byte-identical, no K8s
+  resource version bump, no log lines at INFO+).
+- **Validation**: `Validate` returns `OK: false` with explanatory
+  issues when the backend cannot faithfully express the job (e.g.
+  crontab cannot honor per-job timezone, systemd-timer's OnCalendar
+  cannot express some rare cron forms). The reconciler aborts the
+  apply when validation fails.
+
+The interface is stable from v1 onward. Community contributions for new
+backends become possible after v1 ships.
 
 ## Backend Fidelity Matrix
 
-*(Phase 5 will populate this.)*
+| Capability | crontab | systemd-timer | kubernetes |
+|---|---|---|---|
+| 5-field cron | ✓ native | ✓ via `OnCalendar=` translation | ✓ native |
+| Shortcuts (`@hourly`, …) | ✓ via translation | ✓ native (`OnCalendar=hourly`) | ✓ via translation |
+| `@every <N>{m\|h}` | ✓ when N evenly divides 60/24 | ✓ via `OnCalendar=*-*-* */N` | ✗ rejected at Validate |
+| Sub-minute (`@every <Ns>`) | ✗ | ✗ in v1 (deferred to v1.1) | ✗ |
+| Per-job timezone | ✗ (system TZ only — flagged) | ✓ if systemd ≥ 240 | ✓ via `spec.timeZone` |
+| Concurrency policy enforcement | by shim | by shim (+ `RuntimeMaxSec=` kills runaway) | by shim (+ `concurrencyPolicy: Forbid` belt-and-suspenders) |
+| Native retry / backoff | none — done by shim | none — done by shim | `backoffLimit: 0` defers entirely to shim |
+| Run history source | syslog / `MAILTO=` | `journalctl -u cronix-...` | K8s Events + Pod logs |
+
+The "by shim" pattern is the synthesis-first principle (D-028): the host
+scheduler decides *when to fire*; the shim handles *everything that
+happens at and after the fire*. This keeps backend adapters thin and
+behavior uniform across hosts.
 
 ## Trigger Shim Behavior
 
-*(Phase 5 will populate this.)*
+`cronix trigger <app>.<name>` is the binary the host scheduler invokes
+at every fire. Its full per-fire lifecycle:
+
+1. **Load operator config** from `--config` / `$CRONIX_CONFIG` /
+   `~/.cronix/cronix.yaml` / `/etc/cronix/cronix.yaml`.
+2. **Load job spec** from `<spec-dir>/<app>.<name>.json`, where
+   `spec-dir` defaults to `$CRONIX_JOB_SPEC_DIR` or `/etc/cronix/jobs`.
+   The spec is the post-defaults `NormalizedJob` plus the app id and
+   the resolved `secret_refs`. The reconciler writes this file at
+   apply time.
+3. **Resolve secrets** per the `secret_refs` in the spec. Schemes:
+   `env:NAME`, `file:/path`, `raw:literal`. Empty resolutions are
+   skipped (with a warning log); an empty resulting list is fatal
+   (`ExitInternal`).
+4. **Generate run-id**: a UUIDv7. Constant across all retry attempts
+   within this fire (D-020).
+5. **Acquire concurrency lock** per `policy.concurrency` and
+   `policy.concurrency_scope` (D-009/D-010):
+   - `Allow`: skip lock acquisition entirely.
+   - `Forbid`: try-acquire with TTL = `timeout_seconds + 30s`. On
+     contention, exit `ExitLockContended` (4) with a structured log.
+   - `Replace`: in v1, behaves as `Forbid` and logs the intent
+     (the SIGTERM-the-previous-holder path is deferred — see PLAN.md).
+6. **Per-attempt loop** (1..`policy.retries.max_attempts`):
+   1. Build the HTTP request with `policy.timeout_seconds` enforced
+      via `context.WithTimeout`.
+   2. Inject `X-Cron-*` headers: `Run-Id`, `Schedule-Name`,
+      `Fire-Time` (intended), `Fire-Time-Actual`, `Attempt`,
+      `Previous-Success-Time` (when known).
+   3. Sign per Phase 2 auth using the first resolved secret (verifier
+      accepts any of the listed secrets per D-019).
+   4. Send. On 2xx: success → `ExitOK` (0). On 4xx: app rejected →
+      `ExitAppRejected` (1), do not retry. On 5xx / network /
+      timeout: log and continue.
+   5. Sleep with exponential backoff
+      `min_seconds * 2^(attempt-1)`, capped at `max_seconds`.
+7. **Exhausted retries** → `ExitRetriesExhausted` (2).
+8. **Always release the lock** on exit (`defer Release()`).
+9. **Panic recovery**: a top-level `recover()` logs the panic, releases
+   the lock via the deferred Release, and exits `ExitInternal` (3).
+
+### Exit code map
+
+| Code | Name | Meaning |
+|---|---|---|
+| 0 | `ExitOK` | success (any 2xx) |
+| 1 | `ExitAppRejected` | 4xx — do not retry |
+| 2 | `ExitRetriesExhausted` | retries exhausted on 5xx/network/timeout |
+| 3 | `ExitInternal` | panic, bad spec, unresolved secrets, config error |
+| 4 | `ExitLockContended` | `Forbid` policy + lock held; transient |
+| 75 | `ExitTempfail` | POSIX `EX_TEMPFAIL`, same meaning as 4 |
+
+Some host schedulers special-case `75` (e.g. `cron(8)` honoring
+`MAILTO` thresholds), so `4` and `75` both map to "transient
+contention" and operators are free to use either.
+
+### Observability
+
+The shim emits structured logs to stdout (JSON via stdlib `log/slog`
+with `JSONHandler`) and errors to stderr. Every log line carries
+`app`, `job`, `run_id`. Phase 5 wires the additional emitters:
+
+- Under K8s (`KUBERNETES_SERVICE_HOST` env set), terminal outcomes
+  also post K8s `Event` records.
+- Under systemd (`INVOCATION_ID` env set), structured fields are
+  emitted via journald.
+
+Apps logging at the receiver side should include the inbound
+`X-Cron-Run-Id` so a single fire can be traced end-to-end.
 
 ## CLI
 
@@ -728,6 +851,21 @@ silently being ignored.
 
 ## Changelog
 
+- **2026-05-04 — Phase 5.** Trigger shim (`internal/trigger`) — full
+  per-fire lifecycle: spec load, secret resolve, lock acquire, signed
+  HTTP with timeout + retries + backoff, panic recovery, structured
+  JSON logs, exit-code map. Crontab backend (`internal/backends/crontab`)
+  with 2-line owned blocks and ownership-marker preservation. Reconciler
+  (`internal/reconcile`) with Plan/Apply/Diff/Drift; deletes-then-
+  updates-then-creates ordering; IsNoop() for the idempotent CI path.
+  Skeletons for systemd-timer and kubernetes backends (unit-file and
+  CronJob YAML rendering + Validate; List/Create/Update/Delete deferred
+  to a follow-up phase per PLAN §5c, §5d). `cronix trigger <app>.<job>`
+  wired as the second cobra subcommand. RFC sections populated:
+  Backend Adapter Contract (Go interface, ownership/multi-schedule/
+  idempotency contract), Backend Fidelity Matrix (capability table
+  across the three v1 backends), Trigger Shim Behavior (lifecycle,
+  exit codes, observability).
 - **2026-05-04 — Phase 4.** Go core libraries: `Backend` interface
   (`internal/backends/backend.go`) for host-scheduler adapters with
   ManagedEntry/ValidationResult/HistoryOpts/HistoryEntry types; `Lock`

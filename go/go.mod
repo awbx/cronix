@@ -11,6 +11,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.37.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/redis/go-redis/v9 v9.19.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect

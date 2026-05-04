@@ -31,19 +31,19 @@ type Backend interface {
 	// not owned by cronix MUST NOT appear.
 	List(ctx context.Context) ([]ManagedEntry, error)
 
-	// Create installs a new entry for the given normalized job.
-	// Implementations of multi-schedule jobs install one entry per
-	// schedule (with distinct ManagedEntry.Index values).
-	Create(ctx context.Context, job manifest.NormalizedJob) error
+	// Create installs a new entry for the given normalized job under the
+	// named app. Multi-schedule jobs produce N entries with distinct
+	// ManagedEntry.Index values.
+	Create(ctx context.Context, app string, job manifest.NormalizedJob) error
 
-	// Update replaces the existing entry's content with the rendered
-	// form of `job`. It MUST be a no-op when the rendered form already
-	// matches (D-027).
-	Update(ctx context.Context, entry ManagedEntry, job manifest.NormalizedJob) error
+	// Update replaces all owned entries for (app, job.Name) with the
+	// freshly rendered form of `job`. It MUST be a no-op when the
+	// rendered form already matches (D-027).
+	Update(ctx context.Context, app string, job manifest.NormalizedJob) error
 
-	// Delete removes the entry. Implementations MUST refuse to delete
-	// entries not owned by cronix.
-	Delete(ctx context.Context, entry ManagedEntry) error
+	// Delete removes all owned entries for (app, jobName). Implementations
+	// MUST refuse to delete entries not owned by cronix.
+	Delete(ctx context.Context, app, jobName string) error
 
 	// Validate checks whether the backend can faithfully express the
 	// job. Returns the set of issues, or no issues if the job is fully
