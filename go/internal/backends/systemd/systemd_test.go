@@ -26,13 +26,13 @@ func sampleJob(name string, schedules ...string) manifest.NormalizedJob {
 
 func TestTranslateShortcuts(t *testing.T) {
 	cases := map[string]string{
-		"@hourly":    "hourly",
-		"@daily":     "daily",
-		"@midnight":  "daily",
-		"@weekly":    "weekly",
-		"@monthly":   "monthly",
-		"@yearly":    "yearly",
-		"@annually":  "yearly",
+		"@hourly":   "hourly",
+		"@daily":    "daily",
+		"@midnight": "daily",
+		"@weekly":   "weekly",
+		"@monthly":  "monthly",
+		"@yearly":   "yearly",
+		"@annually": "yearly",
 	}
 	for in, want := range cases {
 		got, err := translateOnCalendar(in)

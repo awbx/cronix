@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	SigVersion                  = "v1"
-	ReplayWindowDefaultSeconds  = 300
-	expectedSignatureHexLen     = 64
+	SigVersion                 = "v1"
+	ReplayWindowDefaultSeconds = 300
+	expectedSignatureHexLen    = 64
 )
 
 // Sentinel errors. Use errors.Is() to discriminate.

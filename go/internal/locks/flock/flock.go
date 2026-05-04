@@ -86,7 +86,7 @@ func validateKey(key string) error {
 	if key == "" {
 		return errors.New("flock: key must be non-empty")
 	}
-	if strings.ContainsAny(key, `/\` + "\x00") {
+	if strings.ContainsAny(key, `/\`+"\x00") {
 		return fmt.Errorf("flock: key contains illegal characters: %q", key)
 	}
 	return nil

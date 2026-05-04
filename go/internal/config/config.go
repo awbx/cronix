@@ -1,10 +1,10 @@
 // Package config loads and validates the operator configuration
 // (cronix.yaml). Resolved order (first match wins):
 //
-//	1. --config <path> on the CLI
-//	2. $CRONIX_CONFIG environment variable
-//	3. ~/.cronix/cronix.yaml
-//	4. /etc/cronix/cronix.yaml
+//  1. --config <path> on the CLI
+//  2. $CRONIX_CONFIG environment variable
+//  3. ~/.cronix/cronix.yaml
+//  4. /etc/cronix/cronix.yaml
 package config
 
 import (

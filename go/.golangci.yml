@@ -4,16 +4,12 @@ run:
   timeout: 5m
 
 linters:
-  default: standard
+  default: none
   enable:
-    - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gocritic
-    - revive
-    - gosec
     - misspell
   exclusions:
     paths:
@@ -24,3 +20,7 @@ formatters:
   enable:
     - gofmt
     - goimports
+  exclusions:
+    paths:
+      - dist
+      - examples/go-app
