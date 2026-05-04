@@ -437,6 +437,152 @@ describe("createCron — late handler binding via cron.on()", () => {
   });
 });
 
+describe("createCron — typed env (Bindings) and var (Variables)", () => {
+  it("ctx.env exposes app-scoped bindings supplied at createCron", async () => {
+    type Db = { query: (sql: string) => Promise<string> };
+    type Env = { Bindings: { db: Db; logger: { info: (msg: string) => void } } };
+    const db: Db = { query: async (sql) => `result:${sql}` };
+    const logged: string[] = [];
+    const cron = createCron<Env>({
+      app: "billing",
+      baseUrl: "https://billing.example.com",
+      secret: SECRET,
+      env: { db, logger: { info: (m) => logged.push(m) } },
+    });
+    let observed: { dbResult: string } | null = null;
+    cron.register({
+      name: "ping",
+      schedule: "@hourly",
+      handler: async (ctx) => {
+        ctx.env.logger.info("ran"); // typed call
+        const r = await ctx.env.db.query("SELECT 1");
+        observed = { dbResult: r };
+        return { ok: true };
+      },
+    });
+    const path = "/api/v1/scheduled/ping";
+    const { header } = await sign({ secret: SECRET, method: "POST", path, body: enc(""), timestamp: NOW });
+    const req = new Request(`https://billing.example.com${path}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header },
+    });
+    const res = await cron.handle(req, { now: NOW });
+    expect(res.status).toBe(200);
+    expect(observed).toEqual({ dbResult: "result:SELECT 1" });
+    expect(logged).toEqual(["ran"]);
+  });
+
+  it("ctx.var exposes per-fire variables supplied at handle()", async () => {
+    type Env = { Variables: { traceId: string; tenantId: number } };
+    const cron = createCron<Env>({
+      app: "billing",
+      baseUrl: "https://billing.example.com",
+      secret: SECRET,
+    });
+    let observed: { traceId: string; tenantId: number } | null = null;
+    cron.register({
+      name: "ping",
+      schedule: "@hourly",
+      handler: async (ctx) => {
+        observed = { traceId: ctx.var.traceId, tenantId: ctx.var.tenantId };
+        return { ok: true };
+      },
+    });
+    const path = "/api/v1/scheduled/ping";
+    const { header } = await sign({ secret: SECRET, method: "POST", path, body: enc(""), timestamp: NOW });
+    const req = new Request(`https://billing.example.com${path}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header },
+    });
+    const res = await cron.handle(req, { now: NOW, vars: { traceId: "t-abc", tenantId: 42 } });
+    expect(res.status).toBe(200);
+    expect(observed).toEqual({ traceId: "t-abc", tenantId: 42 });
+  });
+
+  it("ctx.set/get mutate per-fire variables at runtime", async () => {
+    type Env = { Variables: { counter: number } };
+    const cron = createCron<Env>({
+      app: "x",
+      baseUrl: "https://x.example.com",
+      secret: SECRET,
+    });
+    let final = 0;
+    cron.register({
+      name: "j",
+      schedule: "@hourly",
+      handler: async (ctx) => {
+        ctx.set("counter", ctx.get("counter") + 1);
+        ctx.set("counter", ctx.get("counter") + 1);
+        final = ctx.var.counter;
+        return { ok: true };
+      },
+    });
+    const path = "/api/v1/scheduled/j";
+    const { header } = await sign({ secret: SECRET, method: "POST", path, body: enc(""), timestamp: NOW });
+    const req = new Request(`https://x.example.com${path}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header },
+    });
+    const res = await cron.handle(req, { now: NOW, vars: { counter: 10 } });
+    expect(res.status).toBe(200);
+    expect(final).toBe(12);
+  });
+
+  it("env defaults to empty object when omitted; var defaults too", async () => {
+    const cron = createCron({
+      app: "x",
+      baseUrl: "https://x.example.com",
+      secret: SECRET,
+    });
+    let envKeys: string[] = [];
+    let varKeys: string[] = [];
+    cron.register({
+      name: "j",
+      schedule: "@hourly",
+      handler: async (ctx) => {
+        envKeys = Object.keys(ctx.env);
+        varKeys = Object.keys(ctx.var);
+        return { ok: true };
+      },
+    });
+    const path = "/api/v1/scheduled/j";
+    const { header } = await sign({ secret: SECRET, method: "POST", path, body: enc(""), timestamp: NOW });
+    const req = new Request(`https://x.example.com${path}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header },
+    });
+    await cron.handle(req, { now: NOW });
+    expect(envKeys).toEqual([]);
+    expect(varKeys).toEqual([]);
+  });
+
+  it("vars passed to verifyTrigger flow into ctx.var", async () => {
+    type Env = { Variables: { who: string } };
+    const cron = createCron<Env>({
+      app: "x",
+      baseUrl: "https://x.example.com",
+      secret: SECRET,
+    });
+    cron.register({
+      name: "j",
+      schedule: "@hourly",
+      handler: async (ctx) => ({ ok: true, body: `hi ${ctx.var.who}` }),
+    });
+    const path = "/api/v1/scheduled/j";
+    const { header } = await sign({ secret: SECRET, method: "POST", path, body: enc(""), timestamp: NOW });
+    const req = new Request(`https://x.example.com${path}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header },
+    });
+    const r = await cron.verifyTrigger(req, { now: NOW, vars: { who: "world" } });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.ctx.var.who).toBe("world");
+    const out = await r.run();
+    expect(out.body).toBe("hi world");
+  });
+});
+
 describe("JobContext shape (simplified)", () => {
   it("exposes ctx.headers and ctx.meta nesting", async () => {
     const cron = createCron({ app: "x", baseUrl: "https://x.example.com", secret: SECRET });
