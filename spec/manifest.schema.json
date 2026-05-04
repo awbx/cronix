@@ -1,13 +1,155 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cronix.dev/schemas/manifest-v1.json",
-  "title": "Cronix Manifest (placeholder)",
-  "description": "Phase 1 will replace this with the schema generated from the @cronix/sdk Zod definition. Do not hand-edit.",
+  "title": "Cronix Manifest v1",
+  "description": "Generated from the @cronix/sdk Zod schema by ts/scripts/gen-schema.mjs. Do not hand-edit. CI fails on drift.",
   "type": "object",
-  "required": ["version", "app", "jobs"],
   "properties": {
-    "version": { "const": 1 },
-    "app": { "type": "string" },
-    "jobs": { "type": "array" }
-  }
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "app": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}$"
+    },
+    "jobs": {
+      "minItems": 1,
+      "maxItems": 256,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$"
+          },
+          "schedule": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schedules": {
+            "minItems": 1,
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "request": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "GET",
+                  "POST",
+                  "PUT",
+                  "PATCH",
+                  "DELETE"
+                ]
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "headers": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "body": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "additionalProperties": false
+          },
+          "policy": {
+            "type": "object",
+            "properties": {
+              "concurrency": {
+                "type": "string",
+                "enum": [
+                  "Allow",
+                  "Forbid",
+                  "Replace"
+                ]
+              },
+              "concurrency_scope": {
+                "type": "string",
+                "enum": [
+                  "host",
+                  "global"
+                ]
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600
+              },
+              "retries": {
+                "type": "object",
+                "properties": {
+                  "max_attempts": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "min_seconds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "max_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "auth": {
+            "type": "object",
+            "properties": {
+              "secret_refs": {
+                "minItems": 1,
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z][a-zA-Z0-9_:./-]{0,127}$"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "request"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "version",
+    "app",
+    "jobs"
+  ],
+  "additionalProperties": false
 }
