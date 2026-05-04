@@ -99,7 +99,10 @@ collapses those two things into one declaration that travels with the code.
 ## Changelog
 
 - **2026-05-04 — Phase 0.** Repository scaffolding only. No product code.
-  Locked decisions D-001 through D-028 captured in DECISIONS.md.
+  Locked decisions D-001 through D-029 captured in DECISIONS.md. Repo
+  layout deviates from `PLAN.md` §6: a polyglot top-level (`spec/`,
+  `ts/`, `go/`) replaces the original Go-at-root + TS-in-`packages/`
+  design. The deviation is recorded as D-029.
 
 ## Open Questions
 

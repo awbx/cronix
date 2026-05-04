@@ -4,10 +4,12 @@ project_name: cronix
 
 before:
   hooks:
-    - go mod tidy
+    - cmd: go mod tidy
+      dir: ./go
 
 builds:
   - id: cronix
+    dir: ./go
     main: ./cmd/cronix
     binary: cronix
     env:
@@ -24,9 +26,9 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
-      - -X github.com/awbx/cronix/internal/cli/commands.version={{.Version}}
-      - -X github.com/awbx/cronix/internal/cli/commands.commit={{.Commit}}
-      - -X github.com/awbx/cronix/internal/cli/commands.date={{.Date}}
+      - -X github.com/awbx/cronix/go/internal/cli/commands.version={{.Version}}
+      - -X github.com/awbx/cronix/go/internal/cli/commands.commit={{.Commit}}
+      - -X github.com/awbx/cronix/go/internal/cli/commands.date={{.Date}}
 
 archives:
   - id: cronix

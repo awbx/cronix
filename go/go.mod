@@ -1,4 +1,4 @@
-module github.com/awbx/cronix
+module github.com/awbx/cronix/go
 
 go 1.22
 

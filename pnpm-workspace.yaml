@@ -1,6 +1,0 @@
-packages:
-  - 'packages/*'
-  - 'examples/express-app'
-  - 'examples/fastify-app'
-  - 'examples/hono-app'
-  - 'examples/hand-rolled'
