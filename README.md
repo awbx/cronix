@@ -54,7 +54,13 @@ Future SDKs (Python, Ruby, …) get their own top-level directory. The `spec/` d
 
 ## Status
 
-v1 release candidate. As of v0.3.0 all three backends — `crontab`, `systemd-timer`, `kubernetes` — fully reconcile against their host scheduler (`apply`, `plan`, `drift`, `list`, `prune`, `show`). The on-the-wire spec is frozen; remaining work is `cronix history` (run-record reads from journalctl / K8s logs) and the operator polish in PLAN §7. Authoritative spec: [spec/RFC.md](./spec/RFC.md). Implementation history: [PLAN.md](./PLAN.md).
+v1 release candidate. As of v0.4.0:
+
+- All three backends — `crontab`, `systemd-timer`, `kubernetes` — fully reconcile against their host scheduler.
+- CLI: `apply` / `plan` / `drift` / `list` / `prune` / `show` / `history` / `validate` / `trigger`.
+- `cronix history` reads journalctl (systemd-timer) and Pod logs (kubernetes); the syslog reader for crontab is the remaining backend gap.
+
+The on-the-wire spec is frozen. Authoritative spec: [spec/RFC.md](./spec/RFC.md). Implementation history: [PLAN.md](./PLAN.md).
 
 ## Documentation
 
@@ -89,7 +95,7 @@ curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh | sh
 
 # CLI — pinned version + custom install dir
 curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh \
-  | CRONIX_VERSION=v0.1.1 INSTALL_DIR=/usr/local/bin sh
+  | CRONIX_VERSION=v0.4.0 INSTALL_DIR=/usr/local/bin sh
 
 # CLI — Go install
 go install github.com/awbx/cronix/go/cmd/cronix@latest
