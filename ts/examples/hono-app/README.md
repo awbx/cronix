@@ -1,6 +1,6 @@
 # Hono example
 
-Wires `@cronix/sdk` into Hono. Runs unchanged on Node, Bun, and Cloudflare Workers (export `default app`; remove the `serve()` call when deploying to Workers).
+Wires `@awbx/cronix-sdk` into Hono. Runs unchanged on Node, Bun, and Cloudflare Workers (export `default app`; remove the `serve()` call when deploying to Workers).
 
 ```bash
 pnpm install

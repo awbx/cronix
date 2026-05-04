@@ -11,8 +11,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "gen:schema": "pnpm --filter @cronix/sdk run build && node scripts/gen-schema.mjs",
-    "gen:auth-vectors": "pnpm --filter @cronix/sdk run build && node scripts/gen-auth-vectors.mjs",
+    "gen:schema": "pnpm --filter @awbx/cronix-sdk run build && node scripts/gen-schema.mjs",
+    "gen:auth-vectors": "pnpm --filter @awbx/cronix-sdk run build && node scripts/gen-auth-vectors.mjs",
     "prepare": "husky"
   },
   "keywords": [

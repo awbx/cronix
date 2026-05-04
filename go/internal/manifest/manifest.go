@@ -2,7 +2,7 @@
 //
 // The on-the-wire shape and normalization rules are defined by spec/RFC.md
 // and exhaustively tested against spec/manifest-vectors.json. This package
-// must agree with the @cronix/sdk TypeScript implementation byte-for-byte
+// must agree with the @awbx/cronix-sdk TypeScript implementation byte-for-byte
 // on every vector.
 package manifest
 
@@ -85,7 +85,7 @@ type Auth struct {
 
 // NormalizedManifest is the post-defaults shape — every field is set.
 // The JSON tag order on these structs matches the field order used by the
-// canonicalize() function in @cronix/sdk so encoding/json produces the
+// canonicalize() function in @awbx/cronix-sdk so encoding/json produces the
 // same byte sequence.
 type NormalizedManifest struct {
 	Version int             `json:"version"`

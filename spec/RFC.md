@@ -149,7 +149,7 @@ A manifest is a JSON document with the top-level shape:
 ```
 
 The wire-shape JSON Schema is at `spec/manifest.schema.json`, generated
-from the canonical Zod schema in `@cronix/sdk` by `ts/scripts/gen-schema.mjs`.
+from the canonical Zod schema in `@awbx/cronix-sdk` by `ts/scripts/gen-schema.mjs`.
 CI fails on drift between the Zod schema and the committed JSON Schema.
 
 ### Top-level fields
@@ -266,7 +266,7 @@ hash-stable representation is needed (D-027 — change detection).
 
 ### Conformance
 
-Every manifest implementation (the reference TS in `@cronix/sdk`, the
+Every manifest implementation (the reference TS in `@awbx/cronix-sdk`, the
 reference Go in `internal/manifest`, and any future SDK in any language)
 **must** pass `spec/manifest-vectors.json`. The vectors are the
 authoritative correctness contract. Adding or modifying a vector is a spec
@@ -435,7 +435,7 @@ the SDK into Express, Fastify, Hono, or any other HTTP framework is the
 user's job — and a 5-line job at that.
 
 This section is the language-neutral behavioral contract. The reference
-implementation is `@cronix/sdk` (TypeScript, Web Standards). Future SDKs
+implementation is `@awbx/cronix-sdk` (TypeScript, Web Standards). Future SDKs
 in any language MUST satisfy the same contract and MUST pass
 `spec/manifest-vectors.json` and `spec/auth-vectors.json`.
 
@@ -962,7 +962,7 @@ See `docs/kubernetes.md`.
 | `go install github.com/awbx/cronix/go/cmd/cronix@latest` | works once the repo is published |
 | GitHub Releases (Linux/macOS/Windows tarballs+zip, signed checksums) | wired via GoReleaser; first tag pending |
 | Docker image (`ghcr.io/awbx/cronix:<version>`) | wired via GoReleaser; pushed on tag |
-| `npm install @cronix/sdk` | wired via Changesets; first publish pending |
+| `npm install @awbx/cronix-sdk` | wired via Changesets; first publish pending |
 | Homebrew tap | follow-up |
 | deb / rpm | follow-up |
 
@@ -1054,7 +1054,7 @@ See `docs/kubernetes.md`.
   signed trigger dispatch, tampered body, and unknown job. RFC §SDK
   Contract populated as the language-neutral behavioral spec.
 - **2026-05-04 — Phase 2.** HMAC-SHA256 sign/verify implemented in
-  `@cronix/sdk` (Web Crypto API) and `internal/auth` (`crypto/hmac` +
+  `@awbx/cronix-sdk` (Web Crypto API) and `internal/auth` (`crypto/hmac` +
   `crypto/subtle`). 35 conformance vectors at `spec/auth-vectors.json`
   cover happy path, malformed headers, replay window, tampered fields,
   and multi-secret rotation. CI greps for loose-comparison adjacent to
@@ -1063,7 +1063,7 @@ See `docs/kubernetes.md`.
   threat model, signed-payload construction, header format, replay
   window, comparison rules, and rotation guidance.
 - **2026-05-04 — Phase 1.** Manifest specification, Zod schema in
-  `@cronix/sdk` and Go mirror in `internal/manifest`, conformance vectors
+  `@awbx/cronix-sdk` and Go mirror in `internal/manifest`, conformance vectors
   at `spec/manifest-vectors.json` (29 cases), generated JSON Schema at
   `spec/manifest.schema.json`. Both implementations pass all vectors and
   agree byte-for-byte on canonicalized output.

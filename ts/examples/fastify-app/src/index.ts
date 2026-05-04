@@ -1,4 +1,4 @@
-import { createCron, MANIFEST_PATH } from "@cronix/sdk";
+import { createCron, MANIFEST_PATH } from "@awbx/cronix-sdk";
 import Fastify from "fastify";
 
 const cron = createCron({

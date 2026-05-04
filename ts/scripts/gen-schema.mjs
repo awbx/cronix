@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Regenerate ../spec/manifest.schema.json from the Zod schema in
-// @cronix/sdk. CI fails if running this produces a diff.
+// @awbx/cronix-sdk. CI fails if running this produces a diff.
 
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -18,7 +18,7 @@ const wrapped = {
   $id: "https://cronix.dev/schemas/manifest-v1.json",
   title: "Cronix Manifest v1",
   description:
-    "Generated from the @cronix/sdk Zod schema by ts/scripts/gen-schema.mjs. Do not hand-edit. CI fails on drift.",
+    "Generated from the @awbx/cronix-sdk Zod schema by ts/scripts/gen-schema.mjs. Do not hand-edit. CI fails on drift.",
   ...generated,
 };
 

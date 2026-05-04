@@ -2,7 +2,7 @@
   "name": "@cronix-example/hono-app",
   "version": "0.0.0",
   "private": true,
-  "description": "Wiring @cronix/sdk into Hono — runs unchanged on Node, Bun, and Cloudflare Workers.",
+  "description": "Wiring @awbx/cronix-sdk into Hono — runs unchanged on Node, Bun, and Cloudflare Workers.",
   "type": "module",
   "scripts": {
     "dev": "tsx --watch src/index.ts",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cronix/sdk": "workspace:*",
+    "@awbx/cronix-sdk": "workspace:*",
     "@hono/node-server": "^1.13.7",
     "hono": "^4.10.4"
   },
