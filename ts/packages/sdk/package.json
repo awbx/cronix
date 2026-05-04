@@ -16,6 +16,36 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./vercel": {
+      "import": {
+        "types": "./dist/adapters/vercel.d.ts",
+        "default": "./dist/adapters/vercel.js"
+      },
+      "require": {
+        "types": "./dist/adapters/vercel.d.cts",
+        "default": "./dist/adapters/vercel.cjs"
+      }
+    },
+    "./express": {
+      "import": {
+        "types": "./dist/adapters/express.d.ts",
+        "default": "./dist/adapters/express.js"
+      },
+      "require": {
+        "types": "./dist/adapters/express.d.cts",
+        "default": "./dist/adapters/express.cjs"
+      }
+    },
+    "./fastify": {
+      "import": {
+        "types": "./dist/adapters/fastify.d.ts",
+        "default": "./dist/adapters/fastify.js"
+      },
+      "require": {
+        "types": "./dist/adapters/fastify.d.cts",
+        "default": "./dist/adapters/fastify.cjs"
+      }
     }
   },
   "scripts": {
@@ -48,6 +78,18 @@
   "dependencies": {
     "cron-parser": "^5.5.0",
     "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "express": ">=4",
+    "fastify": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    },
+    "fastify": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/express": "^4.17.25",
