@@ -24,15 +24,15 @@ func newHistoryCmd() *cobra.Command {
 		Use:   "history <app>.<job>",
 		Short: "Show recent runs for one cronix-managed job",
 		Long: `history reads run records from the backend's native source — journalctl
-for systemd-timer, K8s events + pod logs for kubernetes (TODO), syslog
-for crontab (TODO) — and prints one row per terminal run.
+for systemd-timer, Pod logs for kubernetes — and prints one row per
+terminal run. crontab returns nil pending a syslog reader.
 
   cronix history billing.reconcile --backend systemd-timer --since 24h
-  cronix history billing.reconcile --backend systemd-timer --status failed -o json
+  cronix history billing.reconcile --backend kubernetes --status failed -o json
 
-The history surface relies on Backend.History, which in v0.4 is wired
-for systemd-timer only. crontab and kubernetes return empty lists; use
-` + "`journalctl`" + ` or ` + "`kubectl logs`" + ` directly until the wiring lands.`,
+The trigger shim emits one slog-JSON record per attempt; History folds
+those into one entry per terminal run (success / app-rejected /
+retries-exhausted / lock-contended).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
