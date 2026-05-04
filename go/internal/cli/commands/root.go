@@ -20,5 +20,12 @@ func NewRootCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newTriggerCmd())
+	cmd.AddCommand(newValidateCmd())
+	applyCmd := newApplyCmd()
+	cmd.AddCommand(applyCmd)
+	cmd.AddCommand(newPlanAlias(applyCmd))
+	cmd.AddCommand(newListCmd())
+	cmd.AddCommand(newDriftCmd())
+	cmd.AddCommand(newCompletionCmd(cmd))
 	return cmd
 }
