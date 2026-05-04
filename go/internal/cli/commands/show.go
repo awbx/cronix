@@ -97,13 +97,13 @@ func filterAppJob(entries []backends.ManagedEntry, app, job string) []backends.M
 }
 
 type showReport struct {
-	Backend  string                  `json:"backend"`
-	App      string                  `json:"app"`
-	Job      string                  `json:"job"`
-	Found    bool                    `json:"found"`
-	InSync   *bool                   `json:"in_sync,omitempty"`
-	Desired  *manifest.NormalizedJob `json:"desired,omitempty"`
-	Entries  []backends.ManagedEntry `json:"entries"`
+	Backend string                  `json:"backend"`
+	App     string                  `json:"app"`
+	Job     string                  `json:"job"`
+	Found   bool                    `json:"found"`
+	InSync  *bool                   `json:"in_sync,omitempty"`
+	Desired *manifest.NormalizedJob `json:"desired,omitempty"`
+	Entries []backends.ManagedEntry `json:"entries"`
 }
 
 func printShow(cmd *cobra.Command, output, backend, app, job string, desired *manifest.NormalizedJob, entries []backends.ManagedEntry) error {
