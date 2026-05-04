@@ -1,0 +1,38 @@
+image:
+  repository: ghcr.io/awbx/cronix
+  tag: ""  # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+# When set, the chart provisions a CronJob that runs `cronix apply` on
+# a schedule against this URL.
+manifestUrl: ""
+
+# Secret references for both manifest fetches and trigger signing.
+# Each entry is one of: env:NAME | file:/path | raw:literal
+secretRefs: []
+
+# Schedule for the in-cluster cronix-apply job (when manifestUrl is set).
+applySchedule: "*/5 * * * *"
+
+# Where the trigger-shim spec files live in the cronix container.
+specDir: /etc/cronix/jobs
+
+# Extra env passed to the cronix-apply CronJob.
+env: []
+
+# RBAC: by default, cronix needs Read/Write on CronJobs and ConfigMaps
+# in its own namespace.
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi

@@ -1,0 +1,16 @@
+apiVersion: v2
+name: cronix
+description: Cron jobs as code — reconciler for app-declared cron manifests
+type: application
+version: 0.0.1-alpha.1
+appVersion: "0.0.0"
+keywords:
+  - cron
+  - scheduler
+  - kubernetes
+home: https://github.com/awbx/cronix
+sources:
+  - https://github.com/awbx/cronix
+maintainers:
+  - name: Abdelhadi Sabani
+    email: asabani.work@gmail.com

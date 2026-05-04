@@ -1,0 +1,32 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cronix.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cronix.labels" . | nindent 4 }}
+rules:
+- apiGroups: ["batch"]
+  resources: ["cronjobs", "jobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets", "events", "pods", "pods/log"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cronix.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cronix.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cronix.fullname" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ default (include "cronix.fullname" .) .Values.serviceAccount.name }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
