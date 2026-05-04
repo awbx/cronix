@@ -36,7 +36,7 @@ jobs:
           if grep -RnE '(===|!==).*(hmac|signature|sig|mac)' ts/packages/sdk/src \
              | grep -v constantTimeEqual \
              | grep -v '\.test\.ts'; then
-            echo "::error::found loose comparison adjacent to hmac/signature in @cronix/sdk; use constantTimeEqual"
+            echo "::error::found loose comparison adjacent to hmac/signature in @awbx/cronix-sdk; use constantTimeEqual"
             exit 1
           fi
 
@@ -58,7 +58,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: ts/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @cronix/sdk run build
+      - run: pnpm --filter @awbx/cronix-sdk run build
       - name: Run conformance suites under Bun
         run: bun test packages/sdk/test
 

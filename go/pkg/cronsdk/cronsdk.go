@@ -5,7 +5,7 @@
 // fire times etc. from incoming triggers.
 //
 // Full Go SDK with manifest registration and dispatch is deferred to
-// v2 — the TypeScript reference SDK (@cronix/sdk) is the v1 target for
+// v2 — the TypeScript reference SDK (@awbx/cronix-sdk) is the v1 target for
 // app-side declaration. Apps in Go that need to register schedules
 // today should write the manifest JSON directly and use this package
 // only for the verification side.
@@ -41,7 +41,7 @@
 // # Conformance
 //
 // This package re-exports cronix's reference HMAC verifier from
-// internal/auth. Both this package and @cronix/sdk pass every case in
+// internal/auth. Both this package and @awbx/cronix-sdk pass every case in
 // spec/auth-vectors.json byte-for-byte.
 package cronsdk
 
@@ -53,7 +53,7 @@ import (
 	"github.com/awbx/cronix/go/internal/headers"
 )
 
-// Header name constants. Mirror the values in @cronix/sdk's headers.ts.
+// Header name constants. Mirror the values in @awbx/cronix-sdk's headers.ts.
 const (
 	HeaderSignature           = headers.Signature
 	HeaderRunID               = headers.RunID

@@ -35,7 +35,7 @@ importers:
 
   examples/express-app:
     dependencies:
-      '@cronix/sdk':
+      '@awbx/cronix-sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       express:
@@ -51,7 +51,7 @@ importers:
 
   examples/fastify-app:
     dependencies:
-      '@cronix/sdk':
+      '@awbx/cronix-sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       fastify:
@@ -66,7 +66,7 @@ importers:
 
   examples/hono-app:
     dependencies:
-      '@cronix/sdk':
+      '@awbx/cronix-sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       '@hono/node-server':

@@ -1,6 +1,6 @@
 # Express example
 
-Wires `@cronix/sdk` into Express. The SDK has no Express-specific code; this is just two route handlers (~30 lines of glue) calling `cron.verify()`.
+Wires `@awbx/cronix-sdk` into Express. The SDK has no Express-specific code; this is just two route handlers (~30 lines of glue) calling `cron.verify()`.
 
 ```bash
 pnpm install

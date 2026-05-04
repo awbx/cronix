@@ -43,7 +43,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   npm:
-    name: Publish @cronix/sdk to npm
+    name: Publish @awbx/cronix-sdk to npm
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +63,7 @@ jobs:
         working-directory: ts/packages/sdk
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          echo "Publishing @cronix/sdk@${VERSION}"
+          echo "Publishing @awbx/cronix-sdk@${VERSION}"
           pnpm version "${VERSION}" --no-git-tag-version --allow-same-version
       - name: Build
         working-directory: ts/packages/sdk

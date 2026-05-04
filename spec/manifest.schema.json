@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cronix.dev/schemas/manifest-v1.json",
   "title": "Cronix Manifest v1",
-  "description": "Generated from the @cronix/sdk Zod schema by ts/scripts/gen-schema.mjs. Do not hand-edit. CI fails on drift.",
+  "description": "Generated from the @awbx/cronix-sdk Zod schema by ts/scripts/gen-schema.mjs. Do not hand-edit. CI fails on drift.",
   "type": "object",
   "properties": {
     "version": {

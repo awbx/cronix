@@ -1,4 +1,4 @@
-import { createCron, MANIFEST_PATH } from "@cronix/sdk";
+import { createCron, MANIFEST_PATH } from "@awbx/cronix-sdk";
 import express, { type Request, type Response } from "express";
 
 const cron = createCron({

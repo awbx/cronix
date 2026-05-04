@@ -2,7 +2,7 @@
 // manifests and triggers. Stripe-shaped header `t=<unix>,v1=<hex>` (D-014..
 // D-019). Verification is constant-time. The conformance suite at
 // spec/auth-vectors.json defines correctness; both this package and the
-// @cronix/sdk TypeScript implementation must pass every vector.
+// @awbx/cronix-sdk TypeScript implementation must pass every vector.
 package auth
 
 import (
