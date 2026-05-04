@@ -11,6 +11,7 @@ cron.register({
   name: "reconcile-payments",
   schedule: "*/15 * * * *",
   policy: { concurrency: "Forbid", timeout_seconds: 120 },
+  auth: { secret_refs: ["env:CRON_SECRET"] },
   handler: async (ctx) => {
     console.log(`[cron] ${ctx.name} run=${ctx.runId} attempt=${ctx.attempt}`);
     return { ok: true, status: 202 };
