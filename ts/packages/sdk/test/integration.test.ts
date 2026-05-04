@@ -94,6 +94,9 @@ const expressDriver: Driver = {
         return { status: res.status, bodyText: await res.text() };
       },
       teardown: async () => {
+        if (typeof (server as { closeAllConnections?: () => void }).closeAllConnections === "function") {
+          (server as { closeAllConnections: () => void }).closeAllConnections();
+        }
         await new Promise<void>((resolve) => server.close(() => resolve()));
       },
     };
