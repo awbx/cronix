@@ -246,6 +246,40 @@ func TestDeleteRemovesAllOwnedUnits(t *testing.T) {
 	}
 }
 
+func TestListReportsDriftWhenOnCalendarManuallyEdited(t *testing.T) {
+	b, _, dir := newTestBackend(t)
+	if err := b.Create(context.Background(), "billing", sampleJob("reconcile", "@hourly")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	pre, _ := b.List(context.Background())
+	if len(pre) != 1 || pre[0].Hash == "drift-spec-edited" {
+		t.Fatalf("pre-edit list wrong: %+v", pre)
+	}
+
+	// Simulate manual edit: rewrite the timer file with a different
+	// OnCalendar but leave the X-Cronix-* annotations alone.
+	timerPath := filepath.Join(dir, "cronix-billing-reconcile-0.timer")
+	raw, err := os.ReadFile(timerPath)
+	if err != nil {
+		t.Fatalf("read timer: %v", err)
+	}
+	mutated := strings.Replace(string(raw), "OnCalendar=hourly", "OnCalendar=daily", 1)
+	if err := os.WriteFile(timerPath, []byte(mutated), 0o644); err != nil {
+		t.Fatalf("write timer: %v", err)
+	}
+
+	post, err := b.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(post) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(post))
+	}
+	if post[0].Hash != "drift-spec-edited" {
+		t.Errorf("expected drift-spec-edited after manual OnCalendar edit, got %q", post[0].Hash)
+	}
+}
+
 // recordingJournalctl returns canned bytes per call. Args are recorded
 // for assertion.
 type recordingJournalctl struct {

@@ -65,12 +65,17 @@ const (
 // running `cronix trigger`. Must agree with the shim's default.
 const specMountDir = "/etc/cronix/jobs"
 
+// PodLogFetcher reads a pod's stdout. Injectable so tests can return
+// canned shim-event bytes without going through the K8s API.
+type PodLogFetcher func(ctx context.Context, namespace, podName string) ([]byte, error)
+
 // Backend is the Kubernetes CronJob backend.
 type Backend struct {
-	client     kubernetes.Interface
-	image      string
-	namespace  string
-	secretRefs []string
+	client      kubernetes.Interface
+	image       string
+	namespace   string
+	secretRefs  []string
+	podLogFetch PodLogFetcher
 }
 
 // Options for constructing a Backend.
@@ -91,6 +96,11 @@ type Options struct {
 	Client     kubernetes.Interface
 	Kubeconfig string
 	InCluster  bool
+
+	// PodLogFetcher overrides how `cronix history` fetches pod logs.
+	// Defaults to the clientset's GetLogs stream; tests inject a stub
+	// returning canned shim-event bytes.
+	PodLogFetcher PodLogFetcher
 }
 
 // New constructs a Backend.
@@ -114,12 +124,27 @@ func New(opts Options) (*Backend, error) {
 		}
 		client = c
 	}
-	return &Backend{
+	b := &Backend{
 		client:     client,
 		image:      opts.Image,
 		namespace:  ns,
 		secretRefs: append([]string(nil), opts.SecretRefs...),
-	}, nil
+	}
+	b.podLogFetch = opts.PodLogFetcher
+	if b.podLogFetch == nil {
+		b.podLogFetch = b.defaultPodLogFetch
+	}
+	return b, nil
+}
+
+func (b *Backend) defaultPodLogFetch(ctx context.Context, namespace, podName string) ([]byte, error) {
+	req := b.client.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{})
+	stream, err := req.Stream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+	return io.ReadAll(stream)
 }
 
 func buildConfig(opts Options) (*rest.Config, error) {
@@ -149,27 +174,81 @@ func buildConfig(opts Options) (*rest.Config, error) {
 // Name returns "kubernetes".
 func (*Backend) Name() string { return "kubernetes" }
 
-// List enumerates owned CronJobs. ConfigMaps are inferred from CronJob
-// names (`<cronjob-name>-spec`) so a single label query suffices.
+// List enumerates owned CronJobs. The reported Hash is recomputed from
+// the canonical NormalizedJob stored in the matching ConfigMap and
+// cross-checked against the live CronJob's Spec.Schedule — so a manual
+// `kubectl edit cronjob ...` that mutates the schedule (without
+// touching the hash label) still surfaces as drift.
 func (b *Backend) List(ctx context.Context) ([]backends.ManagedEntry, error) {
 	sel := LabelManaged + "=true"
-	list, err := b.client.BatchV1().CronJobs(b.namespace).List(ctx, metav1.ListOptions{LabelSelector: sel})
+	cjs, err := b.client.BatchV1().CronJobs(b.namespace).List(ctx, metav1.ListOptions{LabelSelector: sel})
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes: list cronjobs: %w", err)
 	}
-	out := make([]backends.ManagedEntry, 0, len(list.Items))
-	for i := range list.Items {
-		cj := &list.Items[i]
+	cms, err := b.client.CoreV1().ConfigMaps(b.namespace).List(ctx, metav1.ListOptions{LabelSelector: sel})
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: list configmaps: %w", err)
+	}
+	cmByName := make(map[string]*corev1.ConfigMap, len(cms.Items))
+	for i := range cms.Items {
+		cmByName[cms.Items[i].Name] = &cms.Items[i]
+	}
+
+	out := make([]backends.ManagedEntry, 0, len(cjs.Items))
+	for i := range cjs.Items {
+		cj := &cjs.Items[i]
 		idx, _ := strconv.Atoi(cj.Labels[LabelIndex])
+		hash := computeListHash(cj, cmByName[cj.Name+"-spec"], idx)
 		out = append(out, backends.ManagedEntry{
 			App:   cj.Labels[LabelApp],
 			Job:   cj.Labels[LabelJob],
-			Hash:  cj.Labels[LabelHash],
+			Hash:  hash,
 			Index: idx,
 			Raw:   cj,
 		})
 	}
 	return out, nil
+}
+
+// computeListHash returns the hash to surface for a live CronJob entry.
+// When the matching ConfigMap is present, the canonical NormalizedJob
+// is parsed from its data and the hash is recomputed; if the live
+// Spec.Schedule no longer matches what that canonical produces, a
+// drift-tainted hash is returned so reconcile.Compute reports an
+// Update. When the ConfigMap is missing the hash falls back to the
+// label (best effort).
+func computeListHash(cj *batchv1.CronJob, cm *corev1.ConfigMap, idx int) string {
+	if cm == nil {
+		return cj.Labels[LabelHash]
+	}
+	specJSON := configMapSpecJSON(cm)
+	if len(specJSON) == 0 {
+		return cj.Labels[LabelHash]
+	}
+	var spec trigger.SpecFile
+	if err := json.Unmarshal(specJSON, &spec); err != nil {
+		return cj.Labels[LabelHash]
+	}
+	if idx < 0 || idx >= len(spec.Job.Schedules) {
+		return cj.Labels[LabelHash]
+	}
+	wantSched, err := translateK8sSchedule(spec.Job.Schedules[idx])
+	if err != nil {
+		return cj.Labels[LabelHash]
+	}
+	if cj.Spec.Schedule != wantSched {
+		return "drift-spec-edited"
+	}
+	return hashJobSchedule(spec.Job, idx)
+}
+
+// configMapSpecJSON returns the trigger spec JSON from a cronix-owned
+// ConfigMap regardless of which `<app>.<job>.json` key it lives under.
+func configMapSpecJSON(cm *corev1.ConfigMap) []byte {
+	for _, v := range cm.Data {
+		return []byte(v)
+	}
+	return nil
 }
 
 // Create installs CronJob + ConfigMap pairs for every schedule of `job`.
@@ -287,7 +366,7 @@ func (b *Backend) History(ctx context.Context, opts backends.HistoryOpts) ([]bac
 		if !opts.Until.IsZero() && created.After(opts.Until) {
 			continue
 		}
-		raw, err := b.fetchPodLogs(ctx, pod.Name)
+		raw, err := b.podLogFetch(ctx, b.namespace, pod.Name)
 		if err != nil {
 			continue
 		}
@@ -301,16 +380,6 @@ func (b *Backend) History(ctx context.Context, opts backends.HistoryOpts) ([]bac
 		out = out[len(out)-opts.Limit:]
 	}
 	return out, nil
-}
-
-func (b *Backend) fetchPodLogs(ctx context.Context, podName string) ([]byte, error) {
-	req := b.client.CoreV1().Pods(b.namespace).GetLogs(podName, &corev1.PodLogOptions{})
-	stream, err := req.Stream(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer stream.Close()
-	return io.ReadAll(stream)
 }
 
 // Ensure verifies the API server is reachable.
