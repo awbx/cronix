@@ -11,6 +11,7 @@ const cron = createCron({
 cron.register({
   name: "reconcile-payments",
   schedule: "*/15 * * * *",
+  auth: { secret_refs: ["env:CRON_SECRET"] },
   handler: async (ctx) => {
     console.log(`[cron] ${ctx.name} run=${ctx.runId}`);
     return { ok: true };
