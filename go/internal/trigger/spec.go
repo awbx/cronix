@@ -24,9 +24,9 @@ import (
 // SecretRefs are denormalized from the manifest+operator-config so the
 // shim never touches the manifest source itself.
 type SpecFile struct {
-	App        string                  `json:"app"`
-	Job        manifest.NormalizedJob  `json:"job"`
-	SecretRefs []string                `json:"secret_refs"`
+	App        string                 `json:"app"`
+	Job        manifest.NormalizedJob `json:"job"`
+	SecretRefs []string               `json:"secret_refs"`
 	// ScheduleIndex distinguishes multi-schedule jobs at fire time.
 	ScheduleIndex int `json:"schedule_index"`
 }

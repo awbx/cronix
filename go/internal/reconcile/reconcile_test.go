@@ -205,4 +205,3 @@ func TestDriftIdenticalToCompute(t *testing.T) {
 		t.Fatalf("plan and drift differ in length")
 	}
 }
-

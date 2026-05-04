@@ -22,12 +22,12 @@ import (
 // Exit code map. Documented in RFC §Trigger Shim Behavior. Stable across
 // versions — host schedulers may special-case 75 (EX_TEMPFAIL).
 const (
-	ExitOK             = 0
-	ExitAppRejected    = 1  // 4xx response — do not retry
-	ExitRetriesExhausted = 2 // 5xx/network/timeout, no remaining attempts
-	ExitInternal       = 3  // panic, config load failure, spec parse error
-	ExitLockContended  = 4  // policy=Forbid + lock held; transient
-	ExitTempfail       = 75 // POSIX EX_TEMPFAIL — same meaning as 4
+	ExitOK               = 0
+	ExitAppRejected      = 1  // 4xx response — do not retry
+	ExitRetriesExhausted = 2  // 5xx/network/timeout, no remaining attempts
+	ExitInternal         = 3  // panic, config load failure, spec parse error
+	ExitLockContended    = 4  // policy=Forbid + lock held; transient
+	ExitTempfail         = 75 // POSIX EX_TEMPFAIL — same meaning as 4
 )
 
 // Options configures a single Run.
@@ -61,7 +61,7 @@ type Result struct {
 	ExitCode int
 	RunID    string
 	Attempts int
-	Status   int  // last HTTP status; 0 if no response received
+	Status   int // last HTTP status; 0 if no response received
 	Err      error
 }
 

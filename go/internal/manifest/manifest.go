@@ -89,7 +89,7 @@ type Auth struct {
 // same byte sequence.
 type NormalizedManifest struct {
 	Version int             `json:"version"`
-	App     string           `json:"app"`
+	App     string          `json:"app"`
 	Jobs    []NormalizedJob `json:"jobs"`
 }
 
@@ -110,9 +110,9 @@ type NormalizedRequest struct {
 }
 
 type NormalizedPolicy struct {
-	Concurrency      string           `json:"concurrency"`
-	ConcurrencyScope string           `json:"concurrency_scope"`
-	TimeoutSeconds   int              `json:"timeout_seconds"`
+	Concurrency      string            `json:"concurrency"`
+	ConcurrencyScope string            `json:"concurrency_scope"`
+	TimeoutSeconds   int               `json:"timeout_seconds"`
 	Retries          NormalizedRetries `json:"retries"`
 }
 

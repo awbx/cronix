@@ -8,9 +8,9 @@ import (
 
 func newCompletionCmd(root *cobra.Command) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:       "completion <bash|zsh|fish|powershell>",
-		Short:     "Emit a shell completion script",
-		Long:      `completion writes a shell completion script to stdout. To install:
+		Use:   "completion <bash|zsh|fish|powershell>",
+		Short: "Emit a shell completion script",
+		Long: `completion writes a shell completion script to stdout. To install:
   bash:  cronix completion bash > /etc/bash_completion.d/cronix
   zsh:   cronix completion zsh > "${fpath[1]}/_cronix"
   fish:  cronix completion fish > ~/.config/fish/completions/cronix.fish`,
