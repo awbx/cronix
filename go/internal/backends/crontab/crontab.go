@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -24,14 +25,22 @@ import (
 	"github.com/gofrs/flock"
 
 	"github.com/awbx/cronix/go/internal/backends"
+	"github.com/awbx/cronix/go/internal/backends/historyutil"
 	"github.com/awbx/cronix/go/internal/manifest"
 )
+
+// JournalctlExecutor runs `journalctl` and returns its raw output. Used
+// by History; injectable so tests can feed canned journal records.
+type JournalctlExecutor interface {
+	Run(ctx context.Context, args ...string) ([]byte, error)
+}
 
 // Backend reads and writes a single crontab file.
 type Backend struct {
 	path       string
 	triggerBin string
 	lockPath   string
+	journalctl JournalctlExecutor
 }
 
 // Options for constructing a Backend.
@@ -43,6 +52,10 @@ type Options struct {
 	// LockPath is the file used as the apply-time write mutex. Defaults
 	// to <Path>.cronix.lock.
 	LockPath string
+	// Journalctl runs journalctl invocations for History. Defaults to
+	// os/exec; History returns nil silently when journalctl is missing
+	// (BSDs / macOS, classic syslog-only Linux).
+	Journalctl JournalctlExecutor
 }
 
 // New constructs a Backend.
@@ -56,7 +69,11 @@ func New(opts Options) (*Backend, error) {
 	if opts.LockPath == "" {
 		opts.LockPath = opts.Path + ".cronix.lock"
 	}
-	return &Backend{path: opts.Path, triggerBin: opts.TriggerBin, lockPath: opts.LockPath}, nil
+	jx := opts.Journalctl
+	if jx == nil {
+		jx = defaultJournalctl{}
+	}
+	return &Backend{path: opts.Path, triggerBin: opts.TriggerBin, lockPath: opts.LockPath, journalctl: jx}, nil
 }
 
 // Name returns "crontab".
@@ -144,10 +161,55 @@ func (*Backend) Validate(job manifest.NormalizedJob) backends.ValidationResult {
 	return backends.ValidationResult{OK: len(issues) == 0, Issues: issues}
 }
 
-// History returns nil in v1 (Phase 6 wires `cronix history` against
-// syslog/journalctl).
-func (*Backend) History(_ context.Context, _ backends.HistoryOpts) ([]backends.HistoryEntry, error) {
-	return nil, nil
+// History reads journald for `cronix trigger` invocations launched by
+// crond. Modern Linux distros route cron stdout to journald via the
+// SYSLOG_IDENTIFIER=cronix tag (since the trigger binary is named
+// "cronix"). The shim emits one slog-JSON record per attempt; History
+// folds them into one entry per terminal run.
+//
+// On systems without journalctl (BSDs / macOS / classic syslog-only
+// Linux) this returns an empty list rather than erroring — `cronix
+// list` still works, and operators can always tail their cron mail
+// spool by hand.
+func (b *Backend) History(ctx context.Context, opts backends.HistoryOpts) ([]backends.HistoryEntry, error) {
+	if opts.App == "" || opts.Job == "" {
+		return nil, fmt.Errorf("crontab: history requires App + Job")
+	}
+	args := []string{
+		"--output=json",
+		"--no-pager",
+		"_COMM=cronix",
+	}
+	if !opts.Since.IsZero() {
+		args = append(args, "--since", opts.Since.UTC().Format("2006-01-02 15:04:05"))
+	}
+	if !opts.Until.IsZero() {
+		args = append(args, "--until", opts.Until.UTC().Format("2006-01-02 15:04:05"))
+	}
+	raw, err := b.journalctl.Run(ctx, args...)
+	if err != nil {
+		// journalctl missing is the common case on macOS / BSDs / older
+		// Linux without journald; degrade gracefully rather than failing
+		// `cronix history` on those hosts.
+		return nil, nil //nolint:nilerr // intentional graceful degradation
+	}
+	entries := historyutil.FoldShimLogs(raw, opts.App, opts.Job, "journald", opts.Status)
+	if opts.Limit > 0 && len(entries) > opts.Limit {
+		entries = entries[len(entries)-opts.Limit:]
+	}
+	return entries, nil
+}
+
+// defaultJournalctl shells out to the system `journalctl` binary.
+type defaultJournalctl struct{}
+
+func (defaultJournalctl) Run(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "journalctl", args...) //#nosec G204 — args are constructed internally
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("journalctl %s: %w", strings.Join(args, " "), err)
+	}
+	return out, nil
 }
 
 // Ensure verifies the crontab file exists and is writable.

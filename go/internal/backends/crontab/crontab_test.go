@@ -2,11 +2,14 @@ package crontab
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/manifest"
 )
 
@@ -247,6 +250,68 @@ func TestEnsureCreatesFile(t *testing.T) {
 	}
 	if _, err := os.Stat(b.path); err != nil {
 		t.Fatalf("expected ensure to create %s: %v", b.path, err)
+	}
+}
+
+// recordingJournalctl returns canned bytes per call for the History tests.
+type recordingJournalctl struct {
+	calls [][]string
+	out   []byte
+	err   error
+}
+
+func (r *recordingJournalctl) Run(_ context.Context, args ...string) ([]byte, error) {
+	r.calls = append(r.calls, append([]string(nil), args...))
+	return r.out, r.err
+}
+
+func TestHistoryFiltersByAppAndJob(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "crontab")
+	jx := &recordingJournalctl{
+		// Mixed records: two jobs share the same `cronix` _COMM tag.
+		out: []byte(`{"__REALTIME_TIMESTAMP":"1714820000000000","MESSAGE":"{\"msg\":\"trigger: success\",\"app\":\"billing\",\"job\":\"reconcile\",\"run_id\":\"run-A\",\"status\":200,\"attempt\":1}"}
+{"__REALTIME_TIMESTAMP":"1714820100000000","MESSAGE":"{\"msg\":\"trigger: success\",\"app\":\"reports\",\"job\":\"daily-roll\",\"run_id\":\"run-B\",\"status\":200,\"attempt\":1}"}
+{"__REALTIME_TIMESTAMP":"1714820200000000","MESSAGE":"{\"msg\":\"trigger: app rejected\",\"app\":\"billing\",\"job\":\"reconcile\",\"run_id\":\"run-C\",\"status\":401,\"attempt\":1}"}
+`),
+	}
+	b, err := New(Options{Path: path, TriggerBin: "/usr/local/bin/cronix", Journalctl: jx})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	entries, err := b.History(context.Background(), backends.HistoryOpts{App: "billing", Job: "reconcile"})
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries (only billing.reconcile), got %d: %+v", len(entries), entries)
+	}
+	for _, e := range entries {
+		if e.App != "billing" || e.Job != "reconcile" {
+			t.Errorf("history bled across jobs: %+v", e)
+		}
+	}
+	// Verify the journalctl invocation passed _COMM=cronix to scope at the
+	// transport level (cheap pre-filter even though FoldShimLogs filters too).
+	if !slices.Contains(jx.calls[0], "_COMM=cronix") {
+		t.Errorf("_COMM=cronix arg missing from journalctl call: %v", jx.calls[0])
+	}
+}
+
+func TestHistoryReturnsNilWhenJournalctlMissing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "crontab")
+	jx := &recordingJournalctl{err: errors.New("exec: \"journalctl\": executable file not found")}
+	b, err := New(Options{Path: path, TriggerBin: "/usr/local/bin/cronix", Journalctl: jx})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	entries, err := b.History(context.Background(), backends.HistoryOpts{App: "billing", Job: "reconcile"})
+	if err != nil {
+		t.Errorf("expected History to swallow journalctl-missing error, got %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected empty history when journalctl absent, got %d entries", len(entries))
 	}
 }
 

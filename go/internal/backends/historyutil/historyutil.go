@@ -16,10 +16,14 @@ import (
 )
 
 // ShimEvent is the subset of slog-emitted fields the shim writes per attempt.
+// App / Job land via the WithGroup setup in shim.go and are present on
+// every record from a real cronix trigger.
 type ShimEvent struct {
 	Time    string `json:"time"`
 	Level   string `json:"level"`
 	Msg     string `json:"msg"`
+	App     string `json:"app"`
+	Job     string `json:"job"`
 	RunID   string `json:"run_id"`
 	Status  int    `json:"status"`
 	Attempt int    `json:"attempt"`
@@ -36,14 +40,18 @@ type JournalRecord struct {
 // each record is either:
 //
 //  1. journald-wrapped JSON with a MESSAGE field that itself is shim
-//     slog JSON (systemd path); or
+//     slog JSON (systemd / crontab paths); or
 //  2. raw shim slog JSON (k8s pod logs, plain stdout).
 //
 // Returns one HistoryEntry per run_id, keeping the *terminal* status
 // when both pre-terminal and terminal events are present for the same run.
 //
-// app, job, source are stamped onto every emitted entry. status filter
-// is applied last; pass "" to keep all.
+// app, job, source are stamped onto every emitted entry. When the
+// shim event itself carries non-empty `app` / `job` fields and they
+// don't match the supplied app/job, the record is skipped — useful
+// for the crontab path where one journalctl query returns runs from
+// every cronix-managed job on the host. status filter is applied
+// last; pass "" to keep all.
 func FoldShimLogs(raw []byte, app, job, source, statusFilter string) []backends.HistoryEntry {
 	type byRun struct {
 		entry backends.HistoryEntry
@@ -58,6 +66,12 @@ func FoldShimLogs(raw []byte, app, job, source, statusFilter string) []backends.
 		}
 		ev, when, ok := decodeLine([]byte(line))
 		if !ok || ev.RunID == "" {
+			continue
+		}
+		if app != "" && ev.App != "" && ev.App != app {
+			continue
+		}
+		if job != "" && ev.Job != "" && ev.Job != job {
 			continue
 		}
 		status, terminal := ClassifyShimEvent(ev.Msg)
