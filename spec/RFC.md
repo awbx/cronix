@@ -268,7 +268,157 @@ change requiring an RFC update.
 
 ## Authentication
 
-*(Phase 2 will populate this.)*
+cronix authenticates **both** manifest fetches and trigger requests with the
+same HMAC-SHA256 scheme (D-014). The construction is Stripe-shaped: a single
+header carries a timestamp and one or more signature versions, the receiver
+recomputes the signature, and the comparison is constant-time.
+
+### Threat model
+
+- **Attacker A1** can passively observe network traffic. Defeated by HTTPS
+  (which cronix mandates for manifest URLs and trigger URLs alike).
+- **Attacker A2** can replay captured signed requests. Defeated by the
+  timestamp + replay-window check (D-017).
+- **Attacker A3** can intercept and alter requests in flight (a misissued
+  TLS cert, a compromised intermediary). Defeated by the HMAC over
+  `<ts>.<METHOD>.<path>.<body>` — any change to method, path, body, or
+  timestamp invalidates the signature.
+- **Attacker A4** can read application logs. Mitigated by the requirement
+  that secrets are never logged. Apps and SDKs MUST `redact()` before
+  emitting log lines that include any signed-payload component.
+- **Attacker A5** is a former operator whose access to *one* secret has
+  been revoked. Defeated by D-019 — multi-secret rotation lets the new
+  secret roll out before the old one is removed.
+
+cronix does **not** protect against:
+
+- A compromised app server (the receiver inherently trusts itself).
+- An attacker who has stolen a current secret. Detect by monitoring secret
+  use; rotate via the multi-secret mechanism.
+- Side channels in the HMAC implementation other than timing-of-comparison
+  (which we do mitigate). Cryptographic primitives are stdlib.
+
+### Signed-payload construction (D-015)
+
+The byte sequence input to HMAC is:
+
+```
+<unix_seconds_decimal>.<METHOD_UPPERCASE>.<PATH>.<BODY_BYTES>
+```
+
+- `<unix_seconds_decimal>` is the integer seconds since the Unix epoch,
+  rendered in base-10 with no leading zeros, no signs, no fractional part.
+- `<METHOD_UPPERCASE>` is the HTTP method uppercased (`POST`, `GET`, …).
+  Implementations uppercase the input before signing; the verifier does
+  the same so that mixed-case inputs sign and verify symmetrically.
+- `<PATH>` is the URL path-and-query as-sent. cronix does not normalize
+  paths beyond what the URL parsing layer of the HTTP client/server
+  performs; both sides should agree on percent-encoding rules.
+- `<BODY_BYTES>` is the request body verbatim. For methods conventionally
+  without a body (e.g. `GET`), it is zero bytes.
+- The three `.` characters are literal dots. They are unambiguous because
+  the timestamp is all digits and the method is uppercase letters; no
+  legal value of either field contains `.`.
+
+### Header format (D-016)
+
+```
+X-Cron-Signature: t=<unix_seconds>,v1=<lowercase_hex_sha256>
+```
+
+- `t` is the timestamp from the canonicalization. It MUST equal the
+  timestamp the signer used; mutating it on the wire breaks the signature.
+- `v1` is the lowercase hexadecimal HMAC-SHA256 of the canonical payload,
+  exactly 64 characters.
+- Comma-separated; segment order is not significant; unknown segments are
+  ignored (forward-compat). At minimum, the verifier MUST find a `t=`
+  segment and a `v1=` segment.
+- The `v1=` prefix reserves space for future algorithm upgrades (`v2=`,
+  …) without changing the header name.
+
+### Replay window (D-017)
+
+Verifiers reject signatures whose timestamp is more than `maxSkewSeconds`
+away from the current time, in either direction. Default is 300 seconds.
+Operators may tighten the window per-route. Receivers MUST use a
+monotonic-or-NTP-synced clock; cronix assumes ≤ 60s of uncorrected drift
+between sender and receiver in production.
+
+### Comparison (D-018)
+
+Implementations MUST use a constant-time comparison primitive on the
+HMAC bytes:
+
+- Go: `crypto/subtle.ConstantTimeCompare`.
+- TypeScript: a manual XOR loop over equal-length `Uint8Array`s. Do not
+  assume `crypto.timingSafeEqual` is available across runtimes.
+
+CI greps for loose comparison adjacent to HMAC values in both languages
+(`===`/`!==` near `hmac|signature|sig|mac` in TS, `bytes.Equal` near the
+same in Go) and fails on a hit.
+
+### Multiple acceptable secrets (D-019)
+
+The verifier accepts a list of secrets and reports the index of the first
+one that produces a matching signature. This enables zero-downtime
+rotation:
+
+1. Add the new secret as the highest-priority entry; signers continue
+   using the old secret.
+2. Roll out the new secret to signers; verifiers accept either.
+3. Once all signers have switched, remove the old secret.
+
+Apps reference secrets by `secret_refs` in the manifest, an array of
+opaque identifiers (env-var names, Vault paths, K8s Secret keys); the
+operator-side configuration resolves each reference to its raw bytes.
+The bytes themselves never appear in the manifest.
+
+### Worked example
+
+Inputs:
+
+- `secret`: `whsec_test_primary_aaaaaaaaaaaaaaaaaaaaaaaaaaa`
+- `method`: `POST`
+- `path`: `/api/v1/scheduled/reconcile-payments`
+- `body`: `{"runId":"abc","attempt":1}`
+- `timestamp`: `1730000002`
+
+Canonical payload (literal bytes):
+
+```
+1730000002.POST./api/v1/scheduled/reconcile-payments.{"runId":"abc","attempt":1}
+```
+
+The HMAC-SHA256 hex of that payload with the secret yields the `v1=` value.
+The full header is:
+
+```
+X-Cron-Signature: t=1730000002,v1=<64 lowercase hex chars>
+```
+
+The exact bytes are committed in `spec/auth-vectors.json` under
+`verify-ok/post-json-body` (and in the `sign-emits/post-json-body`
+counterpart). Both the TypeScript and Go reference implementations
+produce the same header.
+
+### Conformance
+
+`spec/auth-vectors.json` is the authoritative correctness contract for any
+implementation. The current vector set (35 cases) covers:
+
+- happy path: empty body; GET with no body; POST with JSON body; UTF-8
+  body with emoji; 1 MiB body; body with embedded NUL bytes; path with
+  percent-encoding; lowercase-method input that is uppercased before
+  signing; rotation case where the second secret matches.
+- malformed header: empty header; missing `t`; missing `v1`; wrong
+  algorithm tag (`v2=`); `v1` of wrong length; `v1` not hex; segment
+  with no `=`; non-integer timestamp.
+- replay: timestamp 1s past the default window; timestamp 1s before the
+  default window; tighter custom window correctly enforced.
+- tamper: signature byte flipped; body altered; method altered; path
+  altered; wrong secret; multiple secrets none of which match.
+
+Adding a vector is a spec change requiring an RFC update.
 
 ## SDK Contract
 
@@ -328,6 +478,15 @@ change requiring an RFC update.
 
 ## Changelog
 
+- **2026-05-04 — Phase 2.** HMAC-SHA256 sign/verify implemented in
+  `@cronix/sdk` (Web Crypto API) and `internal/auth` (`crypto/hmac` +
+  `crypto/subtle`). 35 conformance vectors at `spec/auth-vectors.json`
+  cover happy path, malformed headers, replay window, tampered fields,
+  and multi-secret rotation. CI greps for loose-comparison adjacent to
+  HMAC values in both languages and runs the TS conformance suite under
+  Bun in addition to Node 20+22. RFC §Authentication populated with
+  threat model, signed-payload construction, header format, replay
+  window, comparison rules, and rotation guidance.
 - **2026-05-04 — Phase 1.** Manifest specification, Zod schema in
   `@cronix/sdk` and Go mirror in `internal/manifest`, conformance vectors
   at `spec/manifest-vectors.json` (29 cases), generated JSON Schema at

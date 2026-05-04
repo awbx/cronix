@@ -18,7 +18,6 @@ export const RETRY_ATTEMPTS_MAX = 10;
 export const RETRY_ATTEMPTS_DEFAULT = 3;
 export const RETRY_BACKOFF_MIN_DEFAULT = 1;
 export const RETRY_BACKOFF_MAX_DEFAULT = 60;
-export const REPLAY_WINDOW_DEFAULT_SECONDS = 300;
 
 const scheduleString = z
   .string()

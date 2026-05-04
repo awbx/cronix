@@ -28,6 +28,35 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      - name: HMAC compare-only-constant-time check (TS)
+        working-directory: .
+        run: |
+          if grep -RnE '(===|!==).*(hmac|signature|sig|mac)' ts/packages/sdk/src \
+             | grep -v constantTimeEqual \
+             | grep -v '\.test\.ts'; then
+            echo "::error::found loose comparison adjacent to hmac/signature in @cronix/sdk; use constantTimeEqual"
+            exit 1
+          fi
+
+  bun:
+    name: TypeScript on Bun
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ts/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @cronix/sdk run build
+      - name: Run conformance suites under Bun
+        run: bun test packages/sdk/test
 
   schema-drift:
     name: Schema drift check
@@ -45,9 +74,14 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Regenerate manifest.schema.json
         working-directory: ts
-        run: pnpm gen:schema || echo "spec gen not yet implemented (Phase 1)"
+        run: pnpm gen:schema
+      - name: Regenerate auth-vectors.json
+        working-directory: ts
+        run: pnpm gen:auth-vectors
       - name: Verify no drift
-        run: git diff --exit-code spec/manifest.schema.json || (echo "spec/manifest.schema.json is out of date — run 'pnpm gen:schema' from ts/" && exit 1)
+        run: |
+          git diff --exit-code spec/manifest.schema.json spec/auth-vectors.json || \
+            (echo "spec/manifest.schema.json or spec/auth-vectors.json is out of date — run 'pnpm gen:schema' and 'pnpm gen:auth-vectors' from ts/" && exit 1)
 
   go:
     name: Go
@@ -64,6 +98,14 @@ jobs:
           cache-dependency-path: go/go.sum
       - run: go vet ./...
       - run: go test ./...
+      - name: HMAC compare-only-constant-time check (Go)
+        working-directory: .
+        run: |
+          if grep -RnE 'bytes\.Equal\(.*(hmac|signature|sig|mac).*\)' go \
+             | grep -v '_test\.go'; then
+            echo "::error::found bytes.Equal on hmac/signature in Go sources; use crypto/subtle.ConstantTimeCompare"
+            exit 1
+          fi
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.61
