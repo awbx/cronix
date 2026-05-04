@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/awbx/cronix/go/internal/manifest"
+	"github.com/awbx/cronix/go/internal/trigger"
 )
 
 func sampleJob(name string, schedules ...string) manifest.NormalizedJob {
@@ -114,6 +116,7 @@ func newTestBackend(t *testing.T) (*Backend, *fakeScheduler, *fakeSTS) {
 		ScheduleGroup: "default",
 		TargetArn:     "arn:aws:lambda:us-east-1:123456789012:function:cronix-trigger",
 		RoleArn:       "arn:aws:iam::123456789012:role/cronix-scheduler",
+		SecretRefs:    []string{"env:CRONIX_SECRET"},
 		Scheduler:     sc,
 		STS:           st,
 	})
@@ -261,6 +264,34 @@ func TestTranslateAWSCronShortcuts(t *testing.T) {
 		if err != nil || got != want {
 			t.Errorf("translate(%q) = (%q, %v), want %q", in, got, err, want)
 		}
+	}
+}
+
+func TestCreateEmbedsSpecInScheduleInput(t *testing.T) {
+	b, sc, _ := newTestBackend(t)
+	job := sampleJob("reconcile", "@hourly")
+	if err := b.Create(context.Background(), "billing", job); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got := sc.schedules["cronix-billing-reconcile-0"]
+	if got == nil || got.Target == nil || got.Target.Input == nil {
+		t.Fatalf("expected schedule with target input, got %+v", got)
+	}
+	var spec trigger.SpecFile
+	if err := json.Unmarshal([]byte(awssdk.ToString(got.Target.Input)), &spec); err != nil {
+		t.Fatalf("input is not a SpecFile JSON: %v\nraw=%s", err, awssdk.ToString(got.Target.Input))
+	}
+	if spec.App != "billing" || spec.Job.Name != "reconcile" {
+		t.Errorf("spec app/job mismatch: %+v", spec)
+	}
+	if spec.ScheduleIndex != 0 {
+		t.Errorf("expected ScheduleIndex=0, got %d", spec.ScheduleIndex)
+	}
+	if len(spec.SecretRefs) != 1 || spec.SecretRefs[0] != "env:CRONIX_SECRET" {
+		t.Errorf("expected secret_refs from Options, got %v", spec.SecretRefs)
+	}
+	if spec.Job.Request.URL != "https://example.com/reconcile" {
+		t.Errorf("spec job URL not preserved: %q", spec.Job.Request.URL)
 	}
 }
 
