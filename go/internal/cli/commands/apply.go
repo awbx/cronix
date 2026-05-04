@@ -11,18 +11,42 @@ import (
 
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/backends/crontab"
+	"github.com/awbx/cronix/go/internal/backends/kubernetes"
 	"github.com/awbx/cronix/go/internal/manifest"
 	"github.com/awbx/cronix/go/internal/reconcile"
 	"github.com/awbx/cronix/go/internal/trigger"
 )
 
+// backendOpts collects the flag-driven options for buildBackend so the
+// signature stays manageable as new backends land.
+type backendOpts struct {
+	name          string
+	crontabPath   string
+	triggerBin    string
+	k8sNamespace  string
+	k8sImage      string
+	k8sKubeconfig string
+	k8sInCluster  bool
+	secretRefs    []string
+}
+
+// bindBackendFlags wires the backend-selection flags shared by apply,
+// plan, drift, and list onto the given cobra Command.
+func bindBackendFlags(cmd *cobra.Command, opts *backendOpts) {
+	cmd.Flags().StringVar(&opts.name, "backend", "crontab", "host scheduler backend (crontab|systemd-timer|kubernetes)")
+	cmd.Flags().StringVar(&opts.crontabPath, "crontab-path", "/etc/crontab", "crontab file (when --backend=crontab)")
+	cmd.Flags().StringVar(&opts.triggerBin, "trigger-bin", "/usr/local/bin/cronix", "absolute path to the cronix binary on the host")
+	cmd.Flags().StringVar(&opts.k8sNamespace, "k8s-namespace", "default", "namespace for owned CronJobs/ConfigMaps (when --backend=kubernetes)")
+	cmd.Flags().StringVar(&opts.k8sImage, "k8s-image", "awbx/cronix:latest", "cronix container image used by the CronJob pod (when --backend=kubernetes)")
+	cmd.Flags().StringVar(&opts.k8sKubeconfig, "kubeconfig", "", "path to kubeconfig (defaults to KUBECONFIG / ~/.kube/config / in-cluster)")
+	cmd.Flags().BoolVar(&opts.k8sInCluster, "in-cluster", false, "load API config from the in-cluster service account (when --backend=kubernetes)")
+}
+
 func newApplyCmd() *cobra.Command {
 	var (
 		manifestSource string
 		secretRefs     []string
-		backendName    string
-		crontabPath    string
-		triggerBin     string
+		bopts          backendOpts
 		specDir        string
 		dryRun         bool
 		output         string
@@ -42,7 +66,8 @@ to run on every CI deploy.`,
 			if err != nil {
 				return err
 			}
-			b, err := buildBackend(backendName, crontabPath, triggerBin)
+			bopts.secretRefs = secretRefs
+			b, err := buildBackend(bopts)
 			if err != nil {
 				return err
 			}
@@ -57,7 +82,7 @@ to run on every CI deploy.`,
 			if err != nil {
 				return err
 			}
-			if specDir != "" {
+			if specDir != "" && bopts.name != "kubernetes" {
 				if err := writeSpecs(specDir, normalized, secretRefs); err != nil {
 					return fmt.Errorf("apply: write specs: %w", err)
 				}
@@ -71,10 +96,8 @@ to run on every CI deploy.`,
 	cmd.Flags().StringVar(&manifestSource, "manifest", "", "manifest source (file://, ./path, /abs/path, https://, http://localhost) — required")
 	_ = cmd.MarkFlagRequired("manifest")
 	cmd.Flags().StringSliceVar(&secretRefs, "secret-ref", nil, "secret_ref for HTTPS manifest fetches and trigger spec files")
-	cmd.Flags().StringVar(&backendName, "backend", "crontab", "host scheduler backend (crontab|systemd-timer|kubernetes)")
-	cmd.Flags().StringVar(&crontabPath, "crontab-path", "/etc/crontab", "crontab file (when --backend=crontab)")
-	cmd.Flags().StringVar(&triggerBin, "trigger-bin", "/usr/local/bin/cronix", "absolute path to the cronix binary on the host")
-	cmd.Flags().StringVar(&specDir, "spec-dir", "/etc/cronix/jobs", "where to write per-job spec files for the trigger shim")
+	bindBackendFlags(cmd, &bopts)
+	cmd.Flags().StringVar(&specDir, "spec-dir", "/etc/cronix/jobs", "where to write per-job spec files for the trigger shim (ignored for kubernetes — specs live in ConfigMaps)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the Plan but do not execute")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output format: table|json")
 	return cmd
@@ -98,16 +121,22 @@ and prints what apply would do. Equivalent to apply --dry-run.`
 }
 
 // buildBackend constructs the named backend with the given options.
-func buildBackend(name, crontabPath, triggerBin string) (backends.Backend, error) {
-	switch name {
+func buildBackend(opts backendOpts) (backends.Backend, error) {
+	switch opts.name {
 	case "", "crontab":
-		return crontab.New(crontab.Options{Path: crontabPath, TriggerBin: triggerBin})
+		return crontab.New(crontab.Options{Path: opts.crontabPath, TriggerBin: opts.triggerBin})
 	case "systemd-timer":
 		return nil, fmt.Errorf("backend systemd-timer is render-only in this phase — see PLAN.md §5c")
 	case "kubernetes":
-		return nil, fmt.Errorf("backend kubernetes is render-only in this phase — see PLAN.md §5d")
+		return kubernetes.New(kubernetes.Options{
+			Image:      opts.k8sImage,
+			Namespace:  opts.k8sNamespace,
+			SecretRefs: opts.secretRefs,
+			Kubeconfig: opts.k8sKubeconfig,
+			InCluster:  opts.k8sInCluster,
+		})
 	default:
-		return nil, fmt.Errorf("unknown backend %q", name)
+		return nil, fmt.Errorf("unknown backend %q", opts.name)
 	}
 }
 

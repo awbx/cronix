@@ -12,16 +12,14 @@ import (
 
 func newListCmd() *cobra.Command {
 	var (
-		backendName string
-		crontabPath string
-		triggerBin  string
-		output      string
+		bopts  backendOpts
+		output string
 	)
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List cronix-owned entries currently installed in the backend",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			b, err := buildBackend(backendName, crontabPath, triggerBin)
+			b, err := buildBackend(bopts)
 			if err != nil {
 				return err
 			}
@@ -32,9 +30,7 @@ func newListCmd() *cobra.Command {
 			return printList(cmd, output, b.Name(), entries)
 		},
 	}
-	cmd.Flags().StringVar(&backendName, "backend", "crontab", "host scheduler backend (crontab|systemd-timer|kubernetes)")
-	cmd.Flags().StringVar(&crontabPath, "crontab-path", "/etc/crontab", "crontab file (when --backend=crontab)")
-	cmd.Flags().StringVar(&triggerBin, "trigger-bin", "/usr/local/bin/cronix", "absolute path to the cronix binary on the host")
+	bindBackendFlags(cmd, &bopts)
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output format: table|json")
 	return cmd
 }
