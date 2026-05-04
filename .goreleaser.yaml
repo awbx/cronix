@@ -1,0 +1,83 @@
+version: 2
+
+project_name: cronix
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: cronix
+    main: ./cmd/cronix
+    binary: cronix
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/awbx/cronix/internal/cli/commands.version={{.Version}}
+      - -X github.com/awbx/cronix/internal/cli/commands.commit={{.Commit}}
+      - -X github.com/awbx/cronix/internal/cli/commands.date={{.Date}}
+
+archives:
+  - id: cronix
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: ["tar.gz"]
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+dockers:
+  - image_templates:
+      - "ghcr.io/awbx/cronix:{{ .Version }}-amd64"
+    use: buildx
+    goos: linux
+    goarch: amd64
+    dockerfile: deploy/docker/Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.source=https://github.com/awbx/cronix"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+  - image_templates:
+      - "ghcr.io/awbx/cronix:{{ .Version }}-arm64"
+    use: buildx
+    goos: linux
+    goarch: arm64
+    dockerfile: deploy/docker/Dockerfile
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.source=https://github.com/awbx/cronix"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+
+docker_manifests:
+  - name_template: "ghcr.io/awbx/cronix:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/awbx/cronix:{{ .Version }}-amd64"
+      - "ghcr.io/awbx/cronix:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/awbx/cronix:latest"
+    image_templates:
+      - "ghcr.io/awbx/cronix:{{ .Version }}-amd64"
+      - "ghcr.io/awbx/cronix:{{ .Version }}-arm64"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

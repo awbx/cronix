@@ -1,0 +1,29 @@
+# Node
+node_modules/
+dist/
+*.log
+*.tsbuildinfo
+.npm
+.pnpm-debug.log*
+.env
+.env.local
+
+# Go
+/cronix
+/cronix-*
+*.exe
+*.test
+*.out
+coverage.txt
+dist/
+
+# goreleaser
+dist-go/
+
+# IDE
+.vscode-test
+.idea/
+.DS_Store
+
+# Local Claude state
+.claude/

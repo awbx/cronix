@@ -1,0 +1,5 @@
+{
+  "$comment": "Phase 1 populates this file with the manifest parsing/normalization conformance suite. Both @cronix/sdk and internal/manifest must produce byte-identical normalized output for every vector.",
+  "version": 1,
+  "vectors": []
+}

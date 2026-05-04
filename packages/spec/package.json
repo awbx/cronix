@@ -1,0 +1,25 @@
+{
+  "name": "@cronix/spec",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Language-neutral specification, JSON Schema, and conformance vectors for cronix.",
+  "type": "module",
+  "scripts": {
+    "build": "echo 'spec is documents + JSON files; no build'",
+    "typecheck": "echo 'no TS in spec'",
+    "gen:schema": "echo 'phase 1 will populate this'"
+  },
+  "files": [
+    "RFC.md",
+    "DECISIONS.md",
+    "OPEN_QUESTIONS.md",
+    "manifest.schema.json",
+    "manifest-vectors.json",
+    "auth-vectors.json"
+  ],
+  "author": "Abdelhadi Sabani",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}
