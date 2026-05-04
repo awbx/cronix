@@ -15,13 +15,12 @@ linters:
     - revive
     - gosec
     - misspell
+  exclusions:
+    paths:
+      - dist
+      - examples/go-app
 
 formatters:
   enable:
     - gofmt
     - goimports
-
-issues:
-  exclude-dirs:
-    - dist
-    - examples/go-app
