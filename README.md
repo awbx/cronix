@@ -107,10 +107,18 @@ pnpm add @awbx/cronix-sdk
 import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
 import { Hono } from "hono";
 
-const cron = createCron({
+// Hono-style typed environment. Bindings are app-scoped (set once at
+// createCron). Variables are per-fire (set at cron.handle).
+type CronEnv = {
+  Bindings: { db: Database; logger: Logger };
+  Variables: { traceId: string };
+};
+
+const cron = createCron<CronEnv>({
   app: "billing-service",
   baseUrl: "https://billing.example.com",
   secret: process.env.CRON_SECRET!,
+  env: { db, logger: console },        // ← app-scoped
 });
 
 cron.register({
@@ -118,18 +126,21 @@ cron.register({
   schedule: "*/15 * * * *",
   auth: { secret_refs: ["env:CRON_SECRET"] },
   handler: async (ctx) => {
-    // your existing job logic — runs once per fire after HMAC verifies
-    console.log(`fired ${ctx.name} run=${ctx.runId}`);
+    // ctx.env.<key> and ctx.var.<key> are fully typed
+    ctx.env.logger.info(`fired ${ctx.name} run=${ctx.runId} trace=${ctx.var.traceId}`);
+    await ctx.env.db.query("UPDATE payments SET ...");
     return { ok: true };
   },
 });
 
 const app = new Hono();
 app.all(MANIFEST_PATH, (c) => cron.handle(c.req.raw));
-app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) => cron.handle(c.req.raw));
+app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) =>
+  cron.handle(c.req.raw, { vars: { traceId: crypto.randomUUID() } }),  // ← per-fire
+);
 ```
 
-`cron.handle(req)` is the **zero-glue** path. For more control there are explicit `cron.verifyManifest(req)` / `cron.verifyTrigger(req)` methods, plus `cron.on(name, handler)` for late-binding handlers from another file. See [`ts/examples/`](./ts/examples/) for the three-tier examples (hono, express, fastify).
+`cron.handle(req, opts)` is the **zero-glue** path. For more control there are explicit `cron.verifyManifest(req)` / `cron.verifyTrigger(req)` methods, plus `cron.on(name, handler)` for late-binding handlers from another file. Both methods accept the same `{vars}` option. See [`ts/examples/`](./ts/examples/) for the runnable hono / express / fastify variants.
 
 ## License
 

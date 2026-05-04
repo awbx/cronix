@@ -9,13 +9,16 @@ import {
 } from "./headers.js";
 import { applyDefaults, type Job, type Manifest, parseManifest } from "./manifest.js";
 import type {
+  CronEnv,
   CronInstance,
+  DefaultEnv,
   HandlerResult,
   HeadersInput,
   JobContext,
   JobDefinition,
   JobHandler,
   VerifyFailure,
+  VerifyHandleOptions,
   VerifyInput,
   VerifyManifestResult,
   VerifyRequest,
@@ -35,12 +38,14 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_INTERNAL = 500;
 const HTTP_UNAVAILABLE = 503;
 
-export type CreateCronOptions = {
+export type CreateCronOptions<E extends CronEnv = DefaultEnv> = {
   app: string;
   /** Base URL the manifest publishes for trigger endpoints. No trailing slash required. */
   baseUrl: string;
   /** One or more secrets. Function form is re-evaluated on every verify call. */
   secret: string | string[] | (() => string | string[]);
+  /** App-scoped bindings available as `ctx.env` to every handler. Hono parity: `env`. */
+  env?: E["Bindings"];
 };
 
 /**
@@ -76,16 +81,17 @@ export type CreateCronOptions = {
  * **Tier 3 — late handler binding**: omit `handler` from `register` and bind
  * it later from another file with `cron.on(name, handler)`.
  */
-export function createCron(options: CreateCronOptions): CronInstance {
-  const jobs = new Map<string, { def: JobDefinition }>();
-  const handlers = new Map<string, JobHandler>();
+export function createCron<E extends CronEnv = DefaultEnv>(options: CreateCronOptions<E>): CronInstance<E> {
+  const jobs = new Map<string, { def: JobDefinition<E> }>();
+  const handlers = new Map<string, JobHandler<E>>();
+  const bindings = (options.env ?? {}) as NonNullable<E["Bindings"]>;
 
   const resolveSecrets = (): string[] => {
     const raw = typeof options.secret === "function" ? options.secret() : options.secret;
     return Array.isArray(raw) ? raw : [raw];
   };
 
-  const buildJob = (def: JobDefinition): Job => ({
+  const buildJob = (def: JobDefinition<E>): Job => ({
     name: def.name,
     schedule: def.schedule,
     schedules: def.schedules,
@@ -100,7 +106,7 @@ export function createCron(options: CreateCronOptions): CronInstance {
     auth: def.auth,
   });
 
-  const dispatch = async (ctx: JobContext): Promise<HandlerResult> => {
+  const dispatch = async (ctx: JobContext<E>): Promise<HandlerResult> => {
     if (!jobs.has(ctx.name)) {
       return {
         ok: false,
@@ -119,7 +125,7 @@ export function createCron(options: CreateCronOptions): CronInstance {
     return handler(ctx);
   };
 
-  const register = (def: JobDefinition): void => {
+  const register = (def: JobDefinition<E>): void => {
     if (jobs.has(def.name)) {
       throw new Error(`cronix: job already registered: ${def.name}`);
     }
@@ -136,7 +142,7 @@ export function createCron(options: CreateCronOptions): CronInstance {
     if (def.handler) handlers.set(def.name, def.handler);
   };
 
-  const on = (name: string, handler: JobHandler): void => {
+  const on = (name: string, handler: JobHandler<E>): void => {
     if (!jobs.has(name)) {
       throw new Error(`cronix: cannot bind handler — no job registered named ${name}`);
     }
@@ -181,7 +187,7 @@ export function createCron(options: CreateCronOptions): CronInstance {
     return { ok: true, secretIndex: sigResult.value.secretIndex };
   };
 
-  const verifyManifest = async (req: VerifyInput, opts?: VerifyTimeOptions): Promise<VerifyManifestResult> => {
+  const verifyManifest = async (req: VerifyInput, opts?: VerifyHandleOptions<E>): Promise<VerifyManifestResult> => {
     const n = await normalizeVerifyInput(req, opts);
     if (n.method.toUpperCase() !== "GET") {
       return errorResult(HTTP_BAD_REQUEST, "BadMethod", `manifest fetches must be GET, got ${n.method}`);
@@ -194,7 +200,7 @@ export function createCron(options: CreateCronOptions): CronInstance {
     return { ok: true, secretIndex: r.secretIndex };
   };
 
-  const verifyTrigger = async (req: VerifyInput, opts?: VerifyTimeOptions): Promise<VerifyTriggerResult> => {
+  const verifyTrigger = async (req: VerifyInput, opts?: VerifyHandleOptions<E>): Promise<VerifyTriggerResult<E>> => {
     const n = await normalizeVerifyInput(req, opts);
     const r = await verifySignatureOnly(n);
     if (!r.ok) return r;
@@ -210,7 +216,7 @@ export function createCron(options: CreateCronOptions): CronInstance {
     if (!jobs.has(name)) {
       return errorResult(HTTP_NOT_FOUND, "UnknownJob", `no registered job named ${name}`);
     }
-    const ctx = buildContext(options.app, name, n);
+    const ctx = buildContext<E>(options.app, name, n, bindings, opts?.vars as NonNullable<E["Variables"]> | undefined);
     return {
       ok: true,
       secretIndex: r.secretIndex,
@@ -219,7 +225,7 @@ export function createCron(options: CreateCronOptions): CronInstance {
     };
   };
 
-  const handle = async (req: Request, opts?: VerifyTimeOptions): Promise<Response> => {
+  const handle = async (req: Request, opts?: VerifyHandleOptions<E>): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
 
@@ -254,7 +260,8 @@ export function createCron(options: CreateCronOptions): CronInstance {
     }
     const r = await verifyTrigger(adapted);
     if (!r.ok) return { ok: false, status: r.status, code: r.code, message: r.message };
-    return { ok: true, kind: "trigger", secretIndex: r.secretIndex, ctx: r.ctx, run: r.run };
+    // Legacy ctx is the un-typed JobContext (DefaultEnv); cast for the deprecated shape.
+    return { ok: true, kind: "trigger", secretIndex: r.secretIndex, ctx: r.ctx as unknown as JobContext, run: r.run };
   };
 
   return {
@@ -351,14 +358,21 @@ function singleValuedHeaders(headers: Record<string, string | string[] | undefin
   return out;
 }
 
-function buildContext(app: string, name: string, n: NormalizedRequest): JobContext {
+function buildContext<E extends CronEnv>(
+  app: string,
+  name: string,
+  n: NormalizedRequest,
+  env: NonNullable<E["Bindings"]>,
+  initialVars: NonNullable<E["Variables"]> | undefined,
+): JobContext<E> {
   const runId = pickHeader(n.headers, HeaderRunId) ?? "";
   const attemptStr = pickHeader(n.headers, HeaderAttempt) ?? "1";
   const attempt = Number.parseInt(attemptStr, 10);
   const fireTime = parseUnix(pickHeader(n.headers, HeaderFireTime));
   const fireTimeActual = parseUnix(pickHeader(n.headers, HeaderFireTimeActual));
   const previousSuccessTime = parseUnix(pickHeader(n.headers, HeaderPreviousSuccessTime));
-  return {
+  const vars = { ...((initialVars ?? {}) as Record<string, unknown>) };
+  const ctx = {
     app,
     name,
     runId,
@@ -368,10 +382,18 @@ function buildContext(app: string, name: string, n: NormalizedRequest): JobConte
     text: () => new TextDecoder("utf-8", { fatal: true }).decode(n.body),
     json: <T>() => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(n.body)) as T,
     meta: { fireTime, fireTimeActual, previousSuccessTime },
+    env,
+    var: vars as JobContext<E>["var"],
+    set: <K extends keyof JobContext<E>["var"]>(key: K, value: JobContext<E>["var"][K]) => {
+      (vars as Record<string, unknown>)[key as string] = value;
+    },
+    get: <K extends keyof JobContext<E>["var"]>(key: K) =>
+      (vars as Record<string, unknown>)[key as string] as JobContext<E>["var"][K],
     fireTime,
     fireTimeActual,
     previousSuccessTime,
   };
+  return ctx as JobContext<E>;
 }
 
 function parseUnix(v: string | undefined): Date | null {

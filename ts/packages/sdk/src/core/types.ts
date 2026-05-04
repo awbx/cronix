@@ -3,6 +3,58 @@ import type { Job, NormalizedManifest } from "./manifest.js";
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /**
+ * Generic environment shape, modelled on Hono's `Hono<{ Bindings, Variables }>`.
+ *
+ * - **Bindings** are app-scoped values supplied once at `createCron({env: {...}})`.
+ *   Examples: a database client, a logger, a config object. Available everywhere
+ *   as `ctx.env.<key>`.
+ * - **Variables** are per-fire values supplied at `cron.handle(req, {vars: {...}})`
+ *   (or `verifyTrigger` / `verifyManifest`). Examples: a trace id, a tenant id
+ *   derived from the request. Available as `ctx.var.<key>`, plus runtime
+ *   `ctx.get(key)` / `ctx.set(key, val)`.
+ *
+ * ```ts
+ * type Env = {
+ *   Bindings: { db: Database; logger: Logger };
+ *   Variables: { traceId: string };
+ * };
+ * const cron = createCron<Env>({ app, baseUrl, secret, env: { db, logger: console } });
+ *
+ * cron.register({
+ *   name: "ping",
+ *   schedule: "@hourly",
+ *   handler: async (ctx) => {
+ *     await ctx.env.db.query(...);          // typed Database
+ *     ctx.env.logger.info(ctx.var.traceId); // typed string
+ *     return { ok: true };
+ *   },
+ * });
+ *
+ * app.all(TRIGGER_PATH, (c) =>
+ *   cron.handle(c.req.raw, { vars: { traceId: crypto.randomUUID() } }),
+ * );
+ * ```
+ */
+export type CronEnv = {
+  Bindings?: Record<string, unknown>;
+  Variables?: Record<string, unknown>;
+};
+
+/** Default empty env used when the developer doesn't supply a generic. */
+export type DefaultEnv = { Bindings: Record<string, never>; Variables: Record<string, never> };
+
+type Bindings<E extends CronEnv> = E["Bindings"] extends infer B
+  ? B extends undefined
+    ? Record<string, never>
+    : B
+  : Record<string, never>;
+type Variables<E extends CronEnv> = E["Variables"] extends infer V
+  ? V extends undefined
+    ? Record<string, never>
+    : V
+  : Record<string, never>;
+
+/**
  * Declarative description of one cron job. Hand to `cron.register()`.
  *
  * `url` is **not** part of JobDefinition — the SDK derives it from the
@@ -14,7 +66,7 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
  * only and bind the handler later via `cron.on(name, handler)` — useful when
  * handlers live in their own files.
  */
-export type JobDefinition = {
+export type JobDefinition<E extends CronEnv = DefaultEnv> = {
   name: string;
   schedule?: string;
   schedules?: string[];
@@ -25,19 +77,20 @@ export type JobDefinition = {
   urlOverride?: string;
   policy?: Job["policy"];
   auth?: Job["auth"];
-  handler?: JobHandler;
+  handler?: JobHandler<E>;
 };
 
 /**
  * Per-fire context handed to the registered handler. All fields are derived
- * from the verified incoming request.
+ * from the verified incoming request, with optional app-scoped bindings
+ * (set at `createCron`) and per-fire variables (set at `cron.handle`).
  *
  * Common fields are top-level. The fire-time triplet that most handlers don't
  * touch lives under `ctx.meta`. The flat `fireTime` / `fireTimeActual` /
  * `previousSuccessTime` aliases remain for backwards compatibility and are
- * tagged `@deprecated` — they will be removed in v0.2.
+ * tagged `@deprecated`.
  */
-export type JobContext = {
+export type JobContext<E extends CronEnv = DefaultEnv> = {
   app: string;
   name: string;
   runId: string;
@@ -54,6 +107,14 @@ export type JobContext = {
     fireTimeActual: Date | null;
     previousSuccessTime: Date | null;
   };
+  /** App-scoped bindings, supplied at `createCron({env: ...})`. Empty object by default. */
+  env: Bindings<E>;
+  /** Per-fire variables, supplied at `cron.handle(req, {vars: ...})`. Empty object by default. */
+  var: Variables<E>;
+  /** Set a per-fire variable at runtime; mirrors Hono's `c.set(key, val)`. */
+  set: <K extends keyof Variables<E>>(key: K, value: Variables<E>[K]) => void;
+  /** Read a per-fire variable; mirrors Hono's `c.get(key)`. */
+  get: <K extends keyof Variables<E>>(key: K) => Variables<E>[K];
   /** @deprecated Use `ctx.meta.fireTime`. Will be removed in v0.2. */
   fireTime: Date | null;
   /** @deprecated Use `ctx.meta.fireTimeActual`. Will be removed in v0.2. */
@@ -64,7 +125,7 @@ export type JobContext = {
 
 export type HandlerResult = { ok: boolean; status?: number; body?: string | Uint8Array };
 
-export type JobHandler = (ctx: JobContext) => HandlerResult | Promise<HandlerResult>;
+export type JobHandler<E extends CronEnv = DefaultEnv> = (ctx: JobContext<E>) => HandlerResult | Promise<HandlerResult>;
 
 /**
  * Headers shape accepted by the new verify methods. `Headers` (Web Fetch),
@@ -96,6 +157,11 @@ export type VerifyTimeOptions = {
   maxSkewSeconds?: number;
 };
 
+/** Options accepted by the new verify methods + handle: time-pin plus per-fire variables. */
+export type VerifyHandleOptions<E extends CronEnv = DefaultEnv> = VerifyTimeOptions & {
+  vars?: Variables<E>;
+};
+
 /**
  * Common error shape on the new verify methods. `toResponse()` builds a
  * ready-to-send Web `Response` so the route can `return r.toResponse()`
@@ -111,8 +177,8 @@ export type VerifyFailure = {
 
 export type VerifyManifestResult = { ok: true; secretIndex: number } | VerifyFailure;
 
-export type VerifyTriggerResult =
-  | { ok: true; secretIndex: number; ctx: JobContext; run: () => Promise<HandlerResult> }
+export type VerifyTriggerResult<E extends CronEnv = DefaultEnv> =
+  | { ok: true; secretIndex: number; ctx: JobContext<E>; run: () => Promise<HandlerResult> }
   | VerifyFailure;
 
 /**
@@ -140,16 +206,17 @@ export type VerifyResult =
   | { ok: false; status: number; code: string; message: string };
 
 /**
- * Returned by `createCron()`. The complete public surface.
+ * Returned by `createCron()`. The complete public surface, generic on the
+ * environment type so handlers see typed `ctx.env` and `ctx.var`.
  *
  * Three tiers of integration are supported, in order of less → more glue:
  *
- * **Tier 1 — zero glue**: `cron.handle(request)` returns a fully-formed
+ * **Tier 1 — zero glue**: `cron.handle(request, {vars})` returns a fully-formed
  * `Response`. Wire two routes (manifest, trigger) and you're done.
  *
  * ```ts
  * app.all(MANIFEST_PATH, c => cron.handle(c.req.raw));
- * app.all('/api/v1/scheduled/:name', c => cron.handle(c.req.raw));
+ * app.all(TRIGGER_PATH, c => cron.handle(c.req.raw, { vars: { traceId } }));
  * ```
  *
  * **Tier 2 — explicit verify + dispatch**: `cron.verifyManifest()` and
@@ -161,19 +228,19 @@ export type VerifyResult =
  * declares a job with no handler; bind it later from another file with
  * `cron.on(name, handler)`. Lets handlers live in their own modules.
  */
-export type CronInstance = {
+export type CronInstance<E extends CronEnv = DefaultEnv> = {
   app: string;
   /** Declare a job. `def.handler` may be omitted; bind later via `cron.on`. */
-  register: (def: JobDefinition) => void;
+  register: (def: JobDefinition<E>) => void;
   /** Bind (or rebind) a handler to an already-registered job. */
-  on: (name: string, handler: JobHandler) => void;
+  on: (name: string, handler: JobHandler<E>) => void;
   manifest: () => NormalizedManifest;
   /** Verify a request to the manifest endpoint. Accepts a Web `Request` or `VerifyRequestObject`. */
-  verifyManifest: (req: VerifyInput, opts?: VerifyTimeOptions) => Promise<VerifyManifestResult>;
+  verifyManifest: (req: VerifyInput, opts?: VerifyHandleOptions<E>) => Promise<VerifyManifestResult>;
   /** Verify a request to a trigger endpoint. Accepts a Web `Request` or `VerifyRequestObject`. */
-  verifyTrigger: (req: VerifyInput, opts?: VerifyTimeOptions) => Promise<VerifyTriggerResult>;
+  verifyTrigger: (req: VerifyInput, opts?: VerifyHandleOptions<E>) => Promise<VerifyTriggerResult<E>>;
   /** Zero-glue dispatcher: routes manifest vs trigger by URL path; always returns a `Response`. */
-  handle: (req: Request, opts?: VerifyTimeOptions) => Promise<Response>;
+  handle: (req: Request, opts?: VerifyHandleOptions<E>) => Promise<Response>;
   /** @deprecated Use `verifyManifest` / `verifyTrigger`. Removed in v0.2. */
   verify: (req: VerifyRequest) => Promise<VerifyResult>;
 };
