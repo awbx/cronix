@@ -553,7 +553,130 @@ Any SDK in any language passes:
 
 ## Reconciliation Model
 
-*(Phase 4 will populate this.)*
+`cronix apply` is the reconciler. It reads a manifest (URL or local file
+per D-025), reads the host scheduler's current state via the configured
+backend, computes a diff, and brings the backend into agreement with the
+manifest. There is no daemon; reconciliation is a single-shot operation
+typically invoked from CI.
+
+### State, identity, ownership
+
+cronix tracks ownership per backend (D-026). An entry is "owned" when:
+
+- crontab: a comment line `# cronix:owned app=<app> job=<name> hash=<sha> idx=<n>` is
+  attached to the entry by `apply` at create time.
+- systemd-timer: the `.timer`/`.service` files are named
+  `cronix-<app>-<name>-<idx>.timer` / `.service` (and contain matching
+  `app/job/hash` annotations in `[Unit] X-Cronix-*=` keys).
+- kubernetes: `CronJob` resources carry the labels
+  `cronix.dev/managed=true`, `cronix.dev/app=<app>`,
+  `cronix.dev/job=<name>`, `cronix.dev/hash=<sha>`, `cronix.dev/index=<n>`.
+
+`cronix` MUST NOT modify entries it does not own. This is the
+co-existence guarantee operators rely on when running cronix alongside
+hand-rolled cron entries.
+
+### Identity
+
+The reconciler keys ownership on the tuple `(app, job, index)`:
+
+- **app** — from the manifest's top-level `app` field.
+- **job** — the job's `name`.
+- **index** — for multi-schedule jobs, the index in `schedules[]`. Single-
+  schedule jobs use `index=0`.
+
+The **hash** is `sha256(canonicalize(SubManifestForOneScheduleEntry))`
+truncated to 16 hex chars. It is *not* part of the identity tuple — it is
+the change-detection signal (D-027).
+
+### State table
+
+For each desired (app, job, index) tuple in the manifest and each managed
+entry currently on the backend:
+
+| Desired | Installed | Hash matches | Action |
+|---|---|---|---|
+| ✓ | ✗ | — | **Create** |
+| ✓ | ✓ | ✓ | **Skip** (idempotent — no host-scheduler reload, no log churn) |
+| ✓ | ✓ | ✗ | **Update** |
+| ✗ | ✓ | — | **Delete** |
+| ✗ | ✗ | — | (impossible by construction) |
+
+`Apply` executes the plan in the order **deletes → updates → creates**.
+This frees up backend names and resources before allocating new ones —
+important when a job is renamed (the old entry must be deleted before
+the new entry can be created without a name collision).
+
+### Idempotency
+
+`apply` with a manifest equal to what is already installed MUST be a
+complete no-op. Specifically:
+
+- No file writes that change content.
+- No `systemctl daemon-reload`.
+- No K8s API mutation calls.
+- No log lines emitted at level INFO or higher (debug logs may still
+  describe the no-op for diagnostic purposes).
+
+Operators run `apply` from CI on every deploy. A noisy idempotent path
+makes that workflow expensive and gets the reconciler removed from the
+pipeline. CI integration relies on the no-op contract.
+
+### Concurrency safety
+
+Concurrent `apply` invocations against the same host are uncommon (CI
+serializes naturally) but MUST NOT corrupt state. Backends serialize
+writes:
+
+- crontab: `apply` acquires `/var/lock/cronix/apply.lock` via flock for
+  the duration of the apply.
+- systemd-timer: same flock.
+- kubernetes: relies on K8s optimistic concurrency (`resourceVersion`).
+  Per-CronJob `Update` calls retry on conflict.
+
+Cross-host concurrent applies are out of scope for v1 (Limitation 6).
+
+### Drift
+
+`cronix drift` (Phase 6) reports entries whose installed `hash` no longer
+matches what the current manifest would produce. Drift MAY arise from:
+
+- An operator hand-edited an owned entry. cronix flags but does not auto-
+  correct; `apply` will rewrite it on the next run, which is the operator's
+  acknowledgement of the drift.
+- A new manifest version changed defaults — `apply` will re-create owned
+  entries with the new hash.
+
+### Backend interface
+
+The Go `Backend` interface (`go/internal/backends/backend.go`) is the
+language-neutral contract for any host-scheduler adapter. Phase 5
+ships the three v1 backends; the contract is stable from v1 onward so
+community contributions for additional backends become possible.
+
+### Locking primitives
+
+The trigger shim (Phase 5a) uses the `Lock` interface
+(`go/internal/locks/lock.go`) to enforce per-job `concurrency` and
+`concurrency_scope` (D-009 / D-010). Two implementations ship in v1:
+
+- **flock** (`go/internal/locks/flock`): OS file locks, default for
+  `concurrency_scope: host`. Crashed shims do not leak the lock —
+  the kernel releases the file lock on process exit.
+- **redis** (`go/internal/locks/redis`): SET-NX-EX with Lua-fenced
+  refresh and release, for `concurrency_scope: global`. Fenced
+  release prevents a stale Refresh/Release from a previous holder
+  from stomping on a current holder. Tested under `miniredis` for
+  determinism.
+
+### Operator config
+
+`cronix.yaml` (`go/internal/config`) lists manifest sources, secret
+references, lock backends, and per-job defaults. Resolution order is
+`--config` → `$CRONIX_CONFIG` → `~/.cronix/cronix.yaml` →
+`/etc/cronix/cronix.yaml`. The schema is loaded with strict
+`KnownFields(true)` so typos in field names fail loudly rather than
+silently being ignored.
 
 ## Backend Adapter Contract
 
@@ -605,6 +728,17 @@ Any SDK in any language passes:
 
 ## Changelog
 
+- **2026-05-04 — Phase 4.** Go core libraries: `Backend` interface
+  (`internal/backends/backend.go`) for host-scheduler adapters with
+  ManagedEntry/ValidationResult/HistoryOpts/HistoryEntry types; `Lock`
+  interface (`internal/locks/lock.go`) plus `flock` and `redis`
+  implementations (the latter tested under miniredis with TTL fencing,
+  exclusive-acquisition, late-release-of-stale-token scenarios); operator
+  config schema (`internal/config`) with strict unknown-field rejection,
+  secret-ref syntax (env:/file:/raw:), and HTTPS-by-default URL
+  validation. RFC §Reconciliation Model populated: ownership tracking
+  per backend (D-026), state table, idempotency contract (D-027),
+  concurrency safety, drift semantics.
 - **2026-05-04 — Phase 3.** TypeScript SDK runtime: `createCron(...)`
   exposing `register`, `manifest`, `verify`. The SDK is framework-
   agnostic — no Express/Fastify/Hono adapter packages (deviation from
