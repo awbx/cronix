@@ -1,0 +1,5 @@
+{
+  "$comment": "Phase 2 populates this file with at least 30 HMAC sign/verify conformance cases. Both @cronix/sdk and internal/auth must agree on every vector.",
+  "version": 1,
+  "vectors": []
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cronix.dev/schemas/manifest-v1.json",
+  "title": "Cronix Manifest (placeholder)",
+  "description": "Phase 1 will replace this with the schema generated from the @cronix/sdk Zod definition. Do not hand-edit.",
+  "type": "object",
+  "required": ["version", "app", "jobs"],
+  "properties": {
+    "version": { "const": 1 },
+    "app": { "type": "string" },
+    "jobs": { "type": "array" }
+  }
+}
