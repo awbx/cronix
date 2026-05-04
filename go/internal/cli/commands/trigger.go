@@ -15,8 +15,8 @@ import (
 
 func newTriggerCmd() *cobra.Command {
 	var (
-		specDir  string
-		lockDir  string
+		specDir string
+		lockDir string
 	)
 	cmd := &cobra.Command{
 		Use:   "trigger <app>.<job>",

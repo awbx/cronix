@@ -11,11 +11,11 @@ import (
 )
 
 type rawVector struct {
-	Name        string          `json:"name"`
-	Valid       bool            `json:"valid"`
-	Input       json.RawMessage `json:"input"`
-	Expected    string          `json:"expected"`
-	ErrorPaths  []string        `json:"errorPaths"`
+	Name       string          `json:"name"`
+	Valid      bool            `json:"valid"`
+	Input      json.RawMessage `json:"input"`
+	Expected   string          `json:"expected"`
+	ErrorPaths []string        `json:"errorPaths"`
 }
 
 type vectorFile struct {

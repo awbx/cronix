@@ -210,16 +210,16 @@ func TestValidateFlagsTimezone(t *testing.T) {
 
 func TestTranslateShortcuts(t *testing.T) {
 	cases := map[string]string{
-		"@hourly":     "0 * * * *",
-		"@daily":      "0 0 * * *",
-		"@midnight":   "0 0 * * *",
-		"@weekly":     "0 0 * * 0",
-		"@monthly":    "0 0 1 * *",
-		"@yearly":     "0 0 1 1 *",
-		"@annually":   "0 0 1 1 *",
-		"@every 5m":   "*/5 * * * *",
-		"@every 10m":  "*/10 * * * *",
-		"@every 6h":   "0 */6 * * *",
+		"@hourly":      "0 * * * *",
+		"@daily":       "0 0 * * *",
+		"@midnight":    "0 0 * * *",
+		"@weekly":      "0 0 * * 0",
+		"@monthly":     "0 0 1 * *",
+		"@yearly":      "0 0 1 1 *",
+		"@annually":    "0 0 1 1 *",
+		"@every 5m":    "*/5 * * * *",
+		"@every 10m":   "*/10 * * * *",
+		"@every 6h":    "0 */6 * * *",
 		"*/15 * * * *": "*/15 * * * *",
 	}
 	for in, want := range cases {
