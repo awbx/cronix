@@ -422,7 +422,134 @@ Adding a vector is a spec change requiring an RFC update.
 
 ## SDK Contract
 
-*(Phase 3 will populate this.)*
+A cronix SDK is a small, framework-agnostic library that helps an app
+declare cron jobs in code, build the manifest, and verify signed
+incoming requests. It does **not** ship per-framework adapters. Wiring
+the SDK into Express, Fastify, Hono, or any other HTTP framework is the
+user's job — and a 5-line job at that.
+
+This section is the language-neutral behavioral contract. The reference
+implementation is `@cronix/sdk` (TypeScript, Web Standards). Future SDKs
+in any language MUST satisfy the same contract and MUST pass
+`spec/manifest-vectors.json` and `spec/auth-vectors.json`.
+
+### Surface
+
+Every SDK exposes four operations on a per-app instance:
+
+| Operation | Synchronous? | Purpose |
+|---|---|---|
+| `register(definition)` | yes | Add a job to the registry. Throws on duplicate name or invalid definition. |
+| `manifest()` | yes | Build the `NormalizedManifest` from the registry. Idempotent. |
+| `verify(request)` | async | Verify a signed incoming request. On success returns either a `manifest` outcome or a `trigger` outcome (with a `JobContext` and a `run()` closure that invokes the registered handler). |
+| `(implicit) run` | async | Run the handler for a verified trigger context. Languages with first-class closures expose this as `run()` on the trigger outcome; languages without may expose a separate `dispatch(ctx)` function. |
+
+The instance MUST NOT expose anything else as public API. In particular,
+SDKs do not own routing, framework integration, response shaping,
+authentication-key fetching, retry, or scheduling — all of those are
+either the host framework's responsibility or `cronix trigger`'s.
+
+### `register(definition)`
+
+A `JobDefinition` carries:
+
+- `name` — required, kebab-case, matches D-003 regex.
+- `schedule` xor `schedules` — exactly one is required.
+- `timezone`, `method`, `headers`, `body` — optional, plumb through to
+  the manifest.
+- `urlOverride` — optional escape hatch when the conventional URL
+  (`<baseUrl>/api/v1/scheduled/<name>`) does not fit.
+- `policy`, `auth.secret_refs` — optional; merged into the manifest.
+- `handler` — the function to call when a verified trigger arrives.
+
+`register` MUST validate the produced single-job manifest by running
+`parseManifest` on it. Validation failures throw at register time so
+misuse is loud during boot, not on first fire.
+
+### `manifest()`
+
+Returns a `NormalizedManifest`: every optional field defaulted, jobs
+sorted by name, headers sorted alphabetically. The output is exactly
+what `applyDefaults(parseManifest(rawInput))` produces. SDKs are
+responsible for serializing the manifest to JSON when responding to a
+GET on `/.well-known/cron-manifest` — typically via the host framework's
+JSON helper. (Bytes-on-the-wire don't need to be canonical for the
+manifest endpoint; the *receiver* — `cronix apply` — re-canonicalizes
+for change detection.)
+
+### `verify(request)`
+
+Inputs are Web-Standards shape:
+
+```ts
+{
+  kind: 'manifest' | 'trigger',
+  method: string,
+  path: string,
+  body: Uint8Array,
+  headers: Record<string, string | string[] | undefined>,
+  now?: number,         // unix seconds; default = current time
+  maxSkewSeconds?: number, // default 300 per D-017
+}
+```
+
+The function:
+
+1. Reads `X-Cron-Signature` from headers (case-insensitive). Missing →
+   `MissingSignature` (HTTP 401).
+2. Resolves the configured secrets (the user passes a string, an array,
+   or a function returning either).
+3. Calls the language's HMAC verifier (Phase 2 contract). Failures
+   surface the underlying error code:
+   - `MalformedHeader` → 401
+   - `StaleTimestamp` → 401
+   - `SignatureMismatch` → 401
+4. Validates protocol expectations against the verified request:
+   - For `kind: 'manifest'`: method MUST be `GET` (`BadMethod` → 400)
+     and path MUST be exactly `/.well-known/cron-manifest` (`BadPath`
+     → 404).
+   - For `kind: 'trigger'`: path MUST start with
+     `/api/v1/scheduled/`, the rest MUST be a registered job name
+     (`BadPath` / `UnknownJob` → 404).
+5. On the trigger success path, builds a `JobContext` from the
+   `X-Cron-*` headers (run-id, attempt, fire times) and binds a
+   no-arg `run()` closure that invokes the registered handler.
+
+### Error contract
+
+All `verify` failures return a structured value, not an exception:
+
+```
+{ ok: false, status: number, code: string, message: string }
+```
+
+The `code` is one of: `MissingSignature`, `MalformedHeader`,
+`StaleTimestamp`, `SignatureMismatch`, `BadMethod`, `BadPath`,
+`UnknownJob`. SDKs MAY add error codes for language-specific concerns
+(e.g. body too large) but MUST keep the canonical seven.
+
+### Wiring patterns (informational)
+
+The reference TypeScript SDK ships three example apps demonstrating the
+wiring on Node + Express, Node + Fastify, and Node-or-Bun-or-Workers +
+Hono. Each example mounts two routes — one for the manifest endpoint,
+one for the trigger endpoint — totalling roughly 30 lines of glue. The
+parameterized integration test suite at
+`ts/packages/sdk/test/integration.test.ts` exercises all three under
+the same set of scenarios (signed manifest, missing signature, signed
+trigger dispatch, tampered body, unknown job).
+
+### Conformance
+
+Any SDK in any language passes:
+
+1. `spec/manifest-vectors.json` against its `parseManifest` /
+   `applyDefaults` / `canonicalize` implementations (Phase 1 contract).
+2. `spec/auth-vectors.json` against its `sign` / `verify` (Phase 2
+   contract).
+3. The behavioral test set from §SDK Contract: the same scenarios
+   exercised by the reference TS integration suite, applicable to any
+   HTTP framework.
 
 ## Reconciliation Model
 
@@ -478,6 +605,16 @@ Adding a vector is a spec change requiring an RFC update.
 
 ## Changelog
 
+- **2026-05-04 — Phase 3.** TypeScript SDK runtime: `createCron(...)`
+  exposing `register`, `manifest`, `verify`. The SDK is framework-
+  agnostic — no Express/Fastify/Hono adapter packages (deviation from
+  PLAN.md §3 Tasks). Three runnable examples (`examples/express-app`,
+  `examples/fastify-app`, `examples/hono-app`) demonstrate the wiring
+  in ~30 lines of glue each. Parameterized integration tests under
+  `ts/packages/sdk/test/integration.test.ts` boot all three frameworks
+  in-process and exercise signed-manifest fetch, missing signature,
+  signed trigger dispatch, tampered body, and unknown job. RFC §SDK
+  Contract populated as the language-neutral behavioral spec.
 - **2026-05-04 — Phase 2.** HMAC-SHA256 sign/verify implemented in
   `@cronix/sdk` (Web Crypto API) and `internal/auth` (`crypto/hmac` +
   `crypto/subtle`). 35 conformance vectors at `spec/auth-vectors.json`
