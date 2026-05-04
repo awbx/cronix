@@ -12,6 +12,7 @@ import (
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/backends/crontab"
 	"github.com/awbx/cronix/go/internal/backends/kubernetes"
+	"github.com/awbx/cronix/go/internal/backends/systemd"
 	"github.com/awbx/cronix/go/internal/manifest"
 	"github.com/awbx/cronix/go/internal/reconcile"
 	"github.com/awbx/cronix/go/internal/trigger"
@@ -23,6 +24,7 @@ type backendOpts struct {
 	name          string
 	crontabPath   string
 	triggerBin    string
+	systemdDir    string
 	k8sNamespace  string
 	k8sImage      string
 	k8sKubeconfig string
@@ -36,6 +38,7 @@ func bindBackendFlags(cmd *cobra.Command, opts *backendOpts) {
 	cmd.Flags().StringVar(&opts.name, "backend", "crontab", "host scheduler backend (crontab|systemd-timer|kubernetes)")
 	cmd.Flags().StringVar(&opts.crontabPath, "crontab-path", "/etc/crontab", "crontab file (when --backend=crontab)")
 	cmd.Flags().StringVar(&opts.triggerBin, "trigger-bin", "/usr/local/bin/cronix", "absolute path to the cronix binary on the host")
+	cmd.Flags().StringVar(&opts.systemdDir, "systemd-unit-dir", "/etc/systemd/system", "directory for owned timer/service unit files (when --backend=systemd-timer)")
 	cmd.Flags().StringVar(&opts.k8sNamespace, "k8s-namespace", "default", "namespace for owned CronJobs/ConfigMaps (when --backend=kubernetes)")
 	cmd.Flags().StringVar(&opts.k8sImage, "k8s-image", "awbx/cronix:latest", "cronix container image used by the CronJob pod (when --backend=kubernetes)")
 	cmd.Flags().StringVar(&opts.k8sKubeconfig, "kubeconfig", "", "path to kubeconfig (defaults to KUBECONFIG / ~/.kube/config / in-cluster)")
@@ -126,7 +129,10 @@ func buildBackend(opts backendOpts) (backends.Backend, error) {
 	case "", "crontab":
 		return crontab.New(crontab.Options{Path: opts.crontabPath, TriggerBin: opts.triggerBin})
 	case "systemd-timer":
-		return nil, fmt.Errorf("backend systemd-timer is render-only in this phase — see PLAN.md §5c")
+		return systemd.New(systemd.Options{
+			UnitDir:    opts.systemdDir,
+			TriggerBin: opts.triggerBin,
+		})
 	case "kubernetes":
 		return kubernetes.New(kubernetes.Options{
 			Image:      opts.k8sImage,
