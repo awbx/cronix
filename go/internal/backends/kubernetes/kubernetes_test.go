@@ -234,7 +234,7 @@ func TestEnsureSucceedsAgainstFakeAPIServer(t *testing.T) {
 
 func TestEnsureFailsWhenAPIErrors(t *testing.T) {
 	client := fake.NewClientset()
-	client.Fake.PrependReactor("get", "*", func(_ clienttesting.Action) (bool, runtime.Object, error) {
+	client.PrependReactor("get", "*", func(_ clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewServiceUnavailable("synthetic")
 	})
 	b, _ := New(Options{Image: "x", Client: client})

@@ -486,7 +486,7 @@ func validateName(s string) error {
 		isLower := r >= 'a' && r <= 'z'
 		isDigit := r >= '0' && r <= '9'
 		isHyphen := r == '-'
-		if !(isLower || isDigit || isHyphen) {
+		if !isLower && !isDigit && !isHyphen {
 			return fmt.Errorf("name %q has invalid char at %d", s, i)
 		}
 	}
