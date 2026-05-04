@@ -88,8 +88,12 @@ func New(opts Options) (*Backend, error) {
 // Name returns "systemd-timer".
 func (*Backend) Name() string { return "systemd-timer" }
 
-// List enumerates owned timer units. ConfigMap-style ownership is
-// tracked via X-Cronix-* annotations inside each unit file.
+// List enumerates owned timer units. The reported Hash is the
+// X-Cronix-Hash annotation, but if the actual `OnCalendar=` line in
+// the [Timer] section no longer matches the X-Cronix-OnCalendar
+// annotation, a drift-tainted hash is returned instead — so a manual
+// edit to OnCalendar surfaces in `cronix drift` even when the operator
+// left the hash annotation alone.
 func (b *Backend) List(_ context.Context) ([]backends.ManagedEntry, error) {
 	matches, err := filepath.Glob(filepath.Join(b.unitDir, "cronix-*.timer"))
 	if err != nil {
@@ -101,9 +105,16 @@ func (b *Backend) List(_ context.Context) ([]backends.ManagedEntry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("systemd: read %s: %w", p, err)
 		}
-		entry, ok := parseUnit(string(raw))
+		body := string(raw)
+		entry, ok := parseUnit(body)
 		if !ok {
 			continue
+		}
+		if want := firstMatch(canonicalCalendarRe, body); want != "" {
+			actual := firstMatch(actualCalendarRe, body)
+			if actual != "" && actual != want {
+				entry.Hash = "drift-spec-edited"
+			}
 		}
 		entry.Raw = p
 		out = append(out, entry)
@@ -288,6 +299,7 @@ PartOf=%[4]s.service
 X-Cronix-App=%[1]s
 X-Cronix-Job=%[2]s
 X-Cronix-Index=%[3]d
+X-Cronix-OnCalendar=%[5]s
 %[6]s
 [Timer]
 OnCalendar=%[5]s
@@ -313,10 +325,12 @@ RuntimeMaxSec=%[6]d
 }
 
 var (
-	appLineRe   = regexp.MustCompile(`(?m)^X-Cronix-App=(.+)$`)
-	jobLineRe   = regexp.MustCompile(`(?m)^X-Cronix-Job=(.+)$`)
-	hashLineRe  = regexp.MustCompile(`(?m)^X-Cronix-Hash=(.+)$`)
-	indexLineRe = regexp.MustCompile(`(?m)^X-Cronix-Index=(\d+)$`)
+	appLineRe           = regexp.MustCompile(`(?m)^X-Cronix-App=(.+)$`)
+	jobLineRe           = regexp.MustCompile(`(?m)^X-Cronix-Job=(.+)$`)
+	hashLineRe          = regexp.MustCompile(`(?m)^X-Cronix-Hash=(.+)$`)
+	indexLineRe         = regexp.MustCompile(`(?m)^X-Cronix-Index=(\d+)$`)
+	canonicalCalendarRe = regexp.MustCompile(`(?m)^X-Cronix-OnCalendar=(.+)$`)
+	actualCalendarRe    = regexp.MustCompile(`(?m)^OnCalendar=(.+)$`)
 )
 
 // parseUnit extracts ManagedEntry from a unit file's X-Cronix-* annotations.

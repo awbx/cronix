@@ -244,10 +244,160 @@ func TestEnsureFailsWhenAPIErrors(t *testing.T) {
 	}
 }
 
+func TestListReportsDriftWhenScheduleManuallyEdited(t *testing.T) {
+	b, client := newTestBackend(t)
+	if err := b.Create(context.Background(), "billing", sampleJob("reconcile", "@hourly")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	original, _ := b.List(context.Background())
+	if len(original) != 1 {
+		t.Fatalf("expected 1 entry post-create, got %d", len(original))
+	}
+	canonicalHash := original[0].Hash
+	if canonicalHash == "drift-spec-edited" {
+		t.Fatalf("post-create entry should not be tainted: %+v", original[0])
+	}
+
+	// Simulate `kubectl edit cronjob ...` — change Spec.Schedule WITHOUT
+	// touching the hash label. The pre-fix code would not detect this.
+	cj, err := client.BatchV1().CronJobs("billing").Get(context.Background(), "cronix-billing-reconcile-0", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get cronjob: %v", err)
+	}
+	cj.Spec.Schedule = "*/3 * * * *"
+	if _, err := client.BatchV1().CronJobs("billing").Update(context.Background(), cj, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("update cronjob: %v", err)
+	}
+
+	drifted, err := b.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(drifted) != 1 {
+		t.Fatalf("expected 1 entry after manual edit, got %d", len(drifted))
+	}
+	if drifted[0].Hash != "drift-spec-edited" {
+		t.Errorf("expected drift-spec-edited hash after manual schedule edit, got %q", drifted[0].Hash)
+	}
+}
+
+func TestListFallsBackToLabelHashWhenConfigMapMissing(t *testing.T) {
+	b, client := newTestBackend(t)
+	if err := b.Create(context.Background(), "billing", sampleJob("reconcile", "@hourly")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// Delete the ConfigMap, leaving the CronJob orphaned. List should
+	// surface the entry by label hash (best effort) rather than
+	// dropping it or erroring.
+	if err := client.CoreV1().ConfigMaps("billing").Delete(context.Background(), "cronix-billing-reconcile-0-spec", metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("delete configmap: %v", err)
+	}
+	entries, err := b.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Hash == "" || entries[0].Hash == "drift-spec-edited" {
+		t.Errorf("expected fallback to label hash, got %q", entries[0].Hash)
+	}
+}
+
 func TestHistoryRequiresAppAndJob(t *testing.T) {
 	b, _ := newTestBackend(t)
 	if _, err := b.History(context.Background(), backendsHistoryOpts("", "")); err == nil {
 		t.Errorf("expected error when App+Job are empty")
+	}
+}
+
+func TestHistoryAggregatesAcrossMultiplePods(t *testing.T) {
+	client := fake.NewClientset()
+	// Three Pods belonging to the same (app, job) — typical pattern for
+	// a CronJob that has fired three times. Each Pod's logs carry the
+	// shim's slog records for one run.
+	canned := map[string][]byte{
+		"reconcile-pod-1": []byte(`{"msg":"trigger: success","app":"billing","job":"reconcile","run_id":"run-A","status":200,"attempt":1}` + "\n"),
+		"reconcile-pod-2": []byte(`{"msg":"trigger: server error","app":"billing","job":"reconcile","run_id":"run-B","status":500,"attempt":1}
+{"msg":"trigger: retries exhausted","app":"billing","job":"reconcile","run_id":"run-B","status":500,"attempt":3}
+`),
+		"reconcile-pod-3": []byte(`{"msg":"trigger: app rejected","app":"billing","job":"reconcile","run_id":"run-C","status":401,"attempt":1}` + "\n"),
+	}
+	b, err := New(Options{
+		Image:     "ghcr.io/awbx/cronix:test",
+		Namespace: "billing",
+		Client:    client,
+		PodLogFetcher: func(_ context.Context, _, podName string) ([]byte, error) {
+			return canned[podName], nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	for name := range canned {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "billing",
+				Labels: map[string]string{
+					LabelManaged: "true", LabelApp: "billing", LabelJob: "reconcile", LabelIndex: "0",
+				},
+			},
+		}
+		if _, err := client.CoreV1().Pods("billing").Create(context.Background(), pod, metav1.CreateOptions{}); err != nil {
+			t.Fatalf("inject pod %s: %v", name, err)
+		}
+	}
+
+	entries, err := b.History(context.Background(), backendsHistoryOpts("billing", "reconcile"))
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries (one per run_id across 3 pods), got %d: %+v", len(entries), entries)
+	}
+
+	byRun := map[string]string{}
+	for _, e := range entries {
+		byRun[e.RunID] = e.Status
+	}
+	if byRun["run-A"] != "ok" {
+		t.Errorf("run-A status = %q, want ok", byRun["run-A"])
+	}
+	if byRun["run-B"] != "failed" {
+		t.Errorf("run-B status = %q, want failed (terminal record from pod-2 multi-line)", byRun["run-B"])
+	}
+	if byRun["run-C"] != "failed" {
+		t.Errorf("run-C status = %q, want failed (app rejected)", byRun["run-C"])
+	}
+}
+
+func TestHistoryStatusFilterAcrossPods(t *testing.T) {
+	client := fake.NewClientset()
+	canned := map[string][]byte{
+		"pod-A": []byte(`{"msg":"trigger: success","app":"billing","job":"reconcile","run_id":"r1","status":200,"attempt":1}` + "\n"),
+		"pod-B": []byte(`{"msg":"trigger: app rejected","app":"billing","job":"reconcile","run_id":"r2","status":401,"attempt":1}` + "\n"),
+	}
+	b, _ := New(Options{
+		Image: "x", Namespace: "billing", Client: client,
+		PodLogFetcher: func(_ context.Context, _, n string) ([]byte, error) { return canned[n], nil },
+	})
+	for name := range canned {
+		_, _ = client.CoreV1().Pods("billing").Create(context.Background(), &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name, Namespace: "billing",
+				Labels: map[string]string{LabelManaged: "true", LabelApp: "billing", LabelJob: "reconcile", LabelIndex: "0"},
+			},
+		}, metav1.CreateOptions{})
+	}
+	opts := backendsHistoryOpts("billing", "reconcile")
+	opts.Status = "failed"
+	entries, err := b.History(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(entries) != 1 || entries[0].RunID != "r2" {
+		t.Errorf("expected only the failed run, got %+v", entries)
 	}
 }
 
