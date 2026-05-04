@@ -1,6 +1,10 @@
-import { createCron, MANIFEST_PATH } from "@awbx/cronix-sdk";
+import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+
+// Tier 1 — zero glue. cron.handle(req) does manifest fetch and trigger
+// dispatch internally and returns a fully-formed Response. All your route
+// has to do is hand the Web Request over.
 
 const cron = createCron({
   app: "billing-service",
@@ -20,47 +24,10 @@ cron.register({
 
 const app = new Hono();
 
-app.get(MANIFEST_PATH, async (c) => {
-  const url = new URL(c.req.url);
-  const result = await cron.verify({
-    kind: "manifest",
-    method: c.req.method,
-    path: url.pathname,
-    body: new Uint8Array(0),
-    headers: rawHeaders(c.req.raw.headers),
-  });
-  if (!result.ok) return c.json({ code: result.code, message: result.message }, result.status as 401 | 400 | 404);
-  return c.json(cron.manifest());
-});
-
-app.post("/api/v1/scheduled/:name", async (c) => {
-  const url = new URL(c.req.url);
-  const ab = await c.req.arrayBuffer();
-  const body = new Uint8Array(ab);
-  const result = await cron.verify({
-    kind: "trigger",
-    method: c.req.method,
-    path: url.pathname,
-    body,
-    headers: rawHeaders(c.req.raw.headers),
-  });
-  if (!result.ok) return c.json({ code: result.code, message: result.message }, result.status as 401 | 400 | 404);
-  if (result.kind !== "trigger") return c.json({ code: "InternalError", message: "expected trigger" }, 500);
-  const out = await result.run();
-  const status = out.status ?? (out.ok ? 200 : 500);
-  return out.body !== undefined ? new Response(out.body as BodyInit, { status }) : new Response(null, { status });
-});
-
-function rawHeaders(headers: Headers): Record<string, string | string[] | undefined> {
-  const out: Record<string, string | string[] | undefined> = {};
-  headers.forEach((v, k) => {
-    out[k.toLowerCase()] = v;
-  });
-  return out;
-}
+app.all(MANIFEST_PATH, (c) => cron.handle(c.req.raw));
+app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) => cron.handle(c.req.raw));
 
 const port = Number(globalThis.process?.env?.PORT ?? 3000);
-// Node/Bun launcher. On Workers, export `default app` instead.
 if (typeof globalThis.process !== "undefined") {
   serve({ fetch: app.fetch, port });
   console.log(`hono example up on :${port}`);

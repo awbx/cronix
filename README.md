@@ -101,6 +101,36 @@ docker pull awbx/cronix
 pnpm add @awbx/cronix-sdk
 ```
 
+## TypeScript SDK — minimal hono example
+
+```ts
+import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
+import { Hono } from "hono";
+
+const cron = createCron({
+  app: "billing-service",
+  baseUrl: "https://billing.example.com",
+  secret: process.env.CRON_SECRET!,
+});
+
+cron.register({
+  name: "reconcile-payments",
+  schedule: "*/15 * * * *",
+  auth: { secret_refs: ["env:CRON_SECRET"] },
+  handler: async (ctx) => {
+    // your existing job logic — runs once per fire after HMAC verifies
+    console.log(`fired ${ctx.name} run=${ctx.runId}`);
+    return { ok: true };
+  },
+});
+
+const app = new Hono();
+app.all(MANIFEST_PATH, (c) => cron.handle(c.req.raw));
+app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) => cron.handle(c.req.raw));
+```
+
+`cron.handle(req)` is the **zero-glue** path. For more control there are explicit `cron.verifyManifest(req)` / `cron.verifyTrigger(req)` methods, plus `cron.on(name, handler)` for late-binding handlers from another file. See [`ts/examples/`](./ts/examples/) for the three-tier examples (hono, express, fastify).
+
 ## License
 
 MIT © Abdelhadi Sabani
