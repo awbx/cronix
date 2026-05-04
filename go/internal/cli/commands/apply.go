@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/awbx/cronix/go/internal/backends"
+	"github.com/awbx/cronix/go/internal/backends/aws"
 	"github.com/awbx/cronix/go/internal/backends/crontab"
 	"github.com/awbx/cronix/go/internal/backends/kubernetes"
 	"github.com/awbx/cronix/go/internal/backends/systemd"
@@ -21,21 +23,25 @@ import (
 // backendOpts collects the flag-driven options for buildBackend so the
 // signature stays manageable as new backends land.
 type backendOpts struct {
-	name          string
-	crontabPath   string
-	triggerBin    string
-	systemdDir    string
-	k8sNamespace  string
-	k8sImage      string
-	k8sKubeconfig string
-	k8sInCluster  bool
-	secretRefs    []string
+	name             string
+	crontabPath      string
+	triggerBin       string
+	systemdDir       string
+	k8sNamespace     string
+	k8sImage         string
+	k8sKubeconfig    string
+	k8sInCluster     bool
+	awsRegion        string
+	awsScheduleGroup string
+	awsTargetArn     string
+	awsRoleArn       string
+	secretRefs       []string
 }
 
 // bindBackendFlags wires the backend-selection flags shared by apply,
 // plan, drift, and list onto the given cobra Command.
 func bindBackendFlags(cmd *cobra.Command, opts *backendOpts) {
-	cmd.Flags().StringVar(&opts.name, "backend", "crontab", "host scheduler backend (crontab|systemd-timer|kubernetes)")
+	cmd.Flags().StringVar(&opts.name, "backend", "crontab", "host scheduler backend (crontab|systemd-timer|kubernetes|aws-scheduler)")
 	cmd.Flags().StringVar(&opts.crontabPath, "crontab-path", "/etc/crontab", "crontab file (when --backend=crontab)")
 	cmd.Flags().StringVar(&opts.triggerBin, "trigger-bin", "/usr/local/bin/cronix", "absolute path to the cronix binary on the host")
 	cmd.Flags().StringVar(&opts.systemdDir, "systemd-unit-dir", "/etc/systemd/system", "directory for owned timer/service unit files (when --backend=systemd-timer)")
@@ -43,6 +49,10 @@ func bindBackendFlags(cmd *cobra.Command, opts *backendOpts) {
 	cmd.Flags().StringVar(&opts.k8sImage, "k8s-image", "awbx/cronix:latest", "cronix container image used by the CronJob pod (when --backend=kubernetes)")
 	cmd.Flags().StringVar(&opts.k8sKubeconfig, "kubeconfig", "", "path to kubeconfig (defaults to KUBECONFIG / ~/.kube/config / in-cluster)")
 	cmd.Flags().BoolVar(&opts.k8sInCluster, "in-cluster", false, "load API config from the in-cluster service account (when --backend=kubernetes)")
+	cmd.Flags().StringVar(&opts.awsRegion, "aws-region", "", "AWS region (when --backend=aws-scheduler; defaults to SDK chain)")
+	cmd.Flags().StringVar(&opts.awsScheduleGroup, "aws-schedule-group", "default", "EventBridge Schedule group (when --backend=aws-scheduler)")
+	cmd.Flags().StringVar(&opts.awsTargetArn, "aws-target-arn", "", "ARN the schedule invokes — typically the cronix-trigger Lambda (when --backend=aws-scheduler)")
+	cmd.Flags().StringVar(&opts.awsRoleArn, "aws-role-arn", "", "IAM role EventBridge assumes to call the target (when --backend=aws-scheduler)")
 }
 
 func newApplyCmd() *cobra.Command {
@@ -140,6 +150,13 @@ func buildBackend(opts backendOpts) (backends.Backend, error) {
 			SecretRefs: opts.secretRefs,
 			Kubeconfig: opts.k8sKubeconfig,
 			InCluster:  opts.k8sInCluster,
+		})
+	case "aws-scheduler":
+		return aws.New(context.Background(), aws.Options{
+			Region:        opts.awsRegion,
+			ScheduleGroup: opts.awsScheduleGroup,
+			TargetArn:     opts.awsTargetArn,
+			RoleArn:       opts.awsRoleArn,
 		})
 	default:
 		return nil, fmt.Errorf("unknown backend %q", opts.name)
