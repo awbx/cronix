@@ -2,7 +2,10 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -57,6 +60,9 @@ to run on every CI deploy.`,
 			if specDir != "" {
 				if err := writeSpecs(specDir, normalized, secretRefs); err != nil {
 					return fmt.Errorf("apply: write specs: %w", err)
+				}
+				if err := removeOrphanSpecs(specDir, plan); err != nil {
+					return fmt.Errorf("apply: remove orphan specs: %w", err)
 				}
 			}
 			return printApplyResult(cmd, output, plan, res)
@@ -115,6 +121,22 @@ func writeSpecs(dir string, m *manifest.NormalizedManifest, secretRefs []string)
 		}
 		if err := spec.Save(dir); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// removeOrphanSpecs deletes spec files for jobs the plan removed from the
+// backend. The backend Delete op cleans the schedule entry; this cleans the
+// matching <app>.<job>.json so the trigger shim can never re-fire a stale spec.
+func removeOrphanSpecs(dir string, plan *reconcile.Plan) error {
+	for _, op := range plan.Ops {
+		if op.Action != reconcile.ActionDelete {
+			continue
+		}
+		path := filepath.Join(dir, op.App+"."+op.JobName+".json")
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", path, err)
 		}
 	}
 	return nil

@@ -178,6 +178,61 @@ func TestApplyCreateUpdateDeleteNoop(t *testing.T) {
 	}
 }
 
+const twoJobManifest = `{
+  "version": 1,
+  "app": "billing",
+  "jobs": [
+    { "name": "ping", "schedule": "@hourly",
+      "request": { "url": "https://billing.example.com/api/v1/scheduled/ping" } },
+    { "name": "pong", "schedule": "@daily",
+      "request": { "url": "https://billing.example.com/api/v1/scheduled/pong" } }
+  ]
+}`
+
+// TestApplyRemovesOrphanSpecOnDelete pins the bug found by exercising the
+// reconcile lifecycle end-to-end: applying a manifest that drops a previously
+// declared job must remove its <app>.<job>.json spec from --spec-dir, so the
+// trigger shim cannot re-fire a stale spec.
+func TestApplyRemovesOrphanSpecOnDelete(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "manifest.json")
+	crontabPath := filepath.Join(dir, "crontab")
+	specDir := filepath.Join(dir, "specs")
+
+	args := []string{
+		"apply", "--manifest", manifestPath,
+		"--backend", "crontab", "--crontab-path", crontabPath,
+		"--trigger-bin", "/usr/local/bin/cronix",
+		"--spec-dir", specDir,
+		"--secret-ref", "raw:test", "-o", "json",
+	}
+
+	if err := os.WriteFile(manifestPath, []byte(twoJobManifest), 0o644); err != nil {
+		t.Fatalf("write 2-job manifest: %v", err)
+	}
+	if _, _, err := runRoot(t, args...); err != nil {
+		t.Fatalf("first apply: %v", err)
+	}
+	for _, name := range []string{"billing.ping.json", "billing.pong.json"} {
+		if _, err := os.Stat(filepath.Join(specDir, name)); err != nil {
+			t.Fatalf("expected spec %s after first apply: %v", name, err)
+		}
+	}
+
+	if err := os.WriteFile(manifestPath, []byte(sampleManifest), 0o644); err != nil {
+		t.Fatalf("write 1-job manifest: %v", err)
+	}
+	if _, _, err := runRoot(t, args...); err != nil {
+		t.Fatalf("second apply: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(specDir, "billing.ping.json")); err != nil {
+		t.Errorf("ping spec should remain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(specDir, "billing.pong.json")); !os.IsNotExist(err) {
+		t.Errorf("pong spec should have been removed, got err=%v", err)
+	}
+}
+
 func TestPlanNoopFromCleanCrontab(t *testing.T) {
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "manifest.json")
