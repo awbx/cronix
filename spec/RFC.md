@@ -815,7 +815,80 @@ Apps logging at the receiver side should include the inbound
 
 ## CLI
 
-*(Phase 6 will populate this.)*
+`cronix` is a single binary with subcommands. The reconciler-side surface
+is operator-friendly: idempotent `apply`, dry-run `plan`, drift detection,
+read-only `list` and `validate`. The trigger shim is the same binary's
+`trigger` subcommand (Phase 5).
+
+### Subcommands (v1)
+
+| Command | Purpose |
+|---|---|
+| `cronix validate <source>` | Lint a manifest from a file path or signed HTTPS URL. No side effects. |
+| `cronix plan` (alias `diff`) | Show what `apply` would change. Equivalent to `apply --dry-run`. |
+| `cronix apply` | Reconcile a manifest against the host scheduler. Writes per-job spec files for the trigger shim. |
+| `cronix list` | List cronix-owned entries currently installed in the backend. |
+| `cronix drift` | Report entries whose installed state diverges from the manifest. With `--exit-on-drift`, exits 5 when drift is detected. |
+| `cronix trigger <app>.<job>` | Per-fire executor invoked by the host scheduler (Phase 5). |
+| `cronix version` | Version, build, and target platform info. |
+| `cronix completion <bash\|zsh\|fish\|powershell>` | Emit a shell completion script. |
+
+Deferred to a follow-up phase (PLAN.md §Phase 6 covers the full surface):
+`init` (interactive config scaffold), `show <app>.<name>` (detailed view),
+`prune` (remove all owned entries with confirmation), `history` (aggregated
+backend-native run records).
+
+### Cross-cutting behavior
+
+- **Output formats**: `--output table` (default for TTY) or `--output json`
+  (stable shape — CI integration relies on it).
+- **Color**: auto-detected from TTY; `NO_COLOR` env honored.
+- **Manifest source**: file path (`./manifest.json` or `/abs/path`),
+  `file://`, `https://`, or `http://localhost`/`127.0.0.1` for dev.
+  HTTPS sources require `--secret-ref` (one or more) for the signed GET.
+- **Backend selection**: `--backend crontab|systemd-timer|kubernetes`.
+  In v1 only `crontab` supports the full reconciliation cycle; the other
+  two are render-only (PLAN.md §5c, §5d).
+- **Trigger spec writeout**: `cronix apply --spec-dir /etc/cronix/jobs`
+  writes one `<app>.<job>.json` per job into the shim's spec directory.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | success |
+| 1 | generic error (validation failure, fetch failure, etc.) |
+| 2 | usage / config error (cobra surface) |
+| 3 | (reserved for backend unreachable) |
+| 4 | (reserved for auth failure on manifest fetch) |
+| 5 | drift detected (only when `drift --exit-on-drift` is set) |
+
+The trigger shim has its own exit-code map (Phase 5 §Trigger Shim
+Behavior); the two are kept disjoint where overlap would be confusing.
+
+### Quickstart
+
+```bash
+# 1. Validate a local manifest.
+cronix validate ./examples/hand-rolled/manifest.json
+
+# 2. Show what apply would change.
+cronix plan --manifest ./manifest.json --backend crontab \
+  --crontab-path /etc/crontab --trigger-bin /usr/local/bin/cronix \
+  --secret-ref env:CRON_SECRET
+
+# 3. Reconcile.
+cronix apply --manifest ./manifest.json --backend crontab \
+  --crontab-path /etc/crontab --trigger-bin /usr/local/bin/cronix \
+  --spec-dir /etc/cronix/jobs --secret-ref env:CRON_SECRET
+
+# 4. Inspect.
+cronix list --backend crontab --crontab-path /etc/crontab
+
+# 5. Drift check from CI.
+cronix drift --manifest ./manifest.json --backend crontab \
+  --crontab-path /etc/crontab --exit-on-drift
+```
 
 ## Deployment
 
@@ -851,6 +924,16 @@ Apps logging at the receiver side should include the inbound
 
 ## Changelog
 
+- **2026-05-04 — Phase 6.** CLI subcommands: `validate`, `plan`/`diff`,
+  `apply`, `list`, `drift`, `completion` (in addition to `version` from
+  Phase 0 and `trigger` from Phase 5). Stable JSON output via `-o json`
+  for CI integration. Manifest sources: local path, `file://`,
+  `https://`, `http://localhost`. The `drift --exit-on-drift` flag
+  surfaces exit code 5. Apply writes per-job trigger spec files into
+  `--spec-dir`. 9 CLI integration tests exercise the full operator
+  workflow: validate-OK / validate-rejects / apply-create / apply-noop /
+  apply-update / list / drift-noop / plan-shows-update / completion.
+  RFC §CLI populated.
 - **2026-05-04 — Phase 5.** Trigger shim (`internal/trigger`) — full
   per-fire lifecycle: spec load, secret resolve, lock acquire, signed
   HTTP with timeout + retries + backoff, panic recovery, structured
