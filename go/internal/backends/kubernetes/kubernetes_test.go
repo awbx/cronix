@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 
+	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/manifest"
 )
 
@@ -241,6 +242,47 @@ func TestEnsureFailsWhenAPIErrors(t *testing.T) {
 	if err := b.Ensure(context.Background()); err == nil {
 		t.Errorf("expected Ensure to fail when API server is unreachable")
 	}
+}
+
+func TestHistoryRequiresAppAndJob(t *testing.T) {
+	b, _ := newTestBackend(t)
+	if _, err := b.History(context.Background(), backendsHistoryOpts("", "")); err == nil {
+		t.Errorf("expected error when App+Job are empty")
+	}
+}
+
+func TestHistoryListsPodsByLabel(t *testing.T) {
+	b, client := newTestBackend(t)
+	// Inject a pod with the right labels so List returns something.
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "billing-reconcile-pod-1",
+			Namespace: "billing",
+			Labels: map[string]string{
+				LabelManaged: "true",
+				LabelApp:     "billing",
+				LabelJob:     "reconcile",
+				LabelIndex:   "0",
+			},
+		},
+	}
+	if _, err := client.CoreV1().Pods("billing").Create(context.Background(), pod, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("inject pod: %v", err)
+	}
+	// Fake clientset's GetLogs returns "fake logs" by default — not parseable
+	// as shim slog JSON, so History yields zero entries (proves the listing
+	// + parse path runs without erroring).
+	entries, err := b.History(context.Background(), backendsHistoryOpts("billing", "reconcile"))
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries from non-parseable fake logs, got %d", len(entries))
+	}
+}
+
+func backendsHistoryOpts(app, job string) backends.HistoryOpts {
+	return backends.HistoryOpts{App: app, Job: job}
 }
 
 // silence unused import linters when corev1 isn't referenced from non-test code paths
