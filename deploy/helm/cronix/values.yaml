@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/awbx/cronix
+  repository: awbx/cronix
   tag: ""  # defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 
@@ -13,9 +13,6 @@ secretRefs: []
 
 # Schedule for the in-cluster cronix-apply job (when manifestUrl is set).
 applySchedule: "*/5 * * * *"
-
-# Where the trigger-shim spec files live in the cronix container.
-specDir: /etc/cronix/jobs
 
 # Extra env passed to the cronix-apply CronJob.
 env: []
