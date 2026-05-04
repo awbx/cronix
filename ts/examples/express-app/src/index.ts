@@ -1,5 +1,5 @@
-import { createCron } from "@awbx/cronix-sdk";
-import { mount } from "@awbx/cronix-sdk/express";
+import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
+import { handle } from "@awbx/cronix-sdk/express";
 import express from "express";
 
 type CronEnv = {
@@ -25,7 +25,14 @@ cron.register({
 });
 
 const app = express();
-mount(app, cron, { vars: () => ({ traceId: crypto.randomUUID() }) });
+app.all(
+  MANIFEST_PATH,
+  handle((req) => cron.handle(req)),
+);
+app.all(
+  `${TRIGGER_PATH_PREFIX}:name`,
+  handle((req) => cron.handle(req, { vars: { traceId: crypto.randomUUID() } })),
+);
 
 const port = Number(process.env.PORT ?? 3000);
 app.listen(port, () => console.log(`express example up on :${port}`));

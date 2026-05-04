@@ -1,36 +1,23 @@
-import type { CronEnv, CronInstance, VerifyHandleOptions } from "../core/types.js";
+export type FetchHandler = (req: Request) => Response | Promise<Response>;
 
 /**
- * Vercel adapter (Hono-shaped). Modern Vercel functions accept a Web `Request`
- * and return a `Response` directly, so the adapter is a one-line wrapper.
+ * Lift a Web Fetch handler to a Vercel route handler. Modern Vercel
+ * functions accept a Web `Request` and return a `Response`, so this is
+ * essentially identity — the adapter exists for symmetry with the other
+ * framework adapters and as a discoverable entry point.
  *
  * ```ts
  * // app/api/cron/[[...slug]]/route.ts
  * import { handle } from "@awbx/cronix-sdk/vercel";
  * import { cron } from "@/lib/cron";
  *
- * export const GET = handle(cron);
- * export const POST = handle(cron);
+ * export const POST = handle((req) => cron.handle(req));
+ * export const GET = handle((req) => cron.handle(req));
  * ```
  *
- * Or with per-fire variables derived from the request:
- *
- * ```ts
- * export const POST = handle(cron, (req) => ({
- *   vars: { traceId: req.headers.get("x-trace-id") ?? crypto.randomUUID() },
- * }));
- * ```
- *
- * Source: mirrors `hono/vercel`'s `handle` adapter, which is itself a
- * pass-through to `app.fetch` because Vercel's runtime already supplies a
- * Web Request.
+ * Mirrors the shape of `hono/vercel`'s `handle`, which is also a
+ * pass-through because Vercel's runtime already supplies a Web Request.
  */
-export function handle<E extends CronEnv>(
-  cron: CronInstance<E>,
-  varsFromRequest?: (req: Request) => VerifyHandleOptions<E>,
-): (req: Request) => Promise<Response> {
-  if (varsFromRequest === undefined) {
-    return (req) => cron.handle(req);
-  }
-  return (req) => cron.handle(req, varsFromRequest(req));
+export function handle(fn: FetchHandler): (req: Request) => Promise<Response> {
+  return async (req) => fn(req);
 }

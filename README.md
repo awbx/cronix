@@ -144,25 +144,30 @@ app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) =>
 
 ### Framework adapters
 
-For frameworks that don't speak Web Fetch natively, the SDK ships subpath adapters that lift the framework's request/response into `cron.handle` for you — one line of glue per app:
+For frameworks that don't speak Web Fetch natively, the SDK ships subpath adapters that lift any `(req: Request) => Response | Promise<Response>` to a framework-native handler. You wire your own routes — the adapter just bridges the request/response shapes:
 
 ```ts
 // Express
-import { mount } from "@awbx/cronix-sdk/express";
-mount(app, cron, { vars: (req) => ({ traceId: req.header("x-trace-id") ?? crypto.randomUUID() }) });
+import { handle } from "@awbx/cronix-sdk/express";
+app.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
+app.all(`${TRIGGER_PATH_PREFIX}:name`, handle((req) =>
+  cron.handle(req, { vars: { traceId: crypto.randomUUID() } }),
+));
 
-// Fastify
-import { mount } from "@awbx/cronix-sdk/fastify";
-mount(app, cron, { vars: (req) => ({ traceId: crypto.randomUUID() }) });
+// Fastify (rawBody installs a wildcard parser to keep the bytes-as-sent)
+import { handle, rawBody } from "@awbx/cronix-sdk/fastify";
+rawBody(app);
+app.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
+app.all(`${TRIGGER_PATH_PREFIX}:name`, handle((req) => cron.handle(req)));
 
 // Vercel (Next.js route handlers / Edge functions — Web Request native)
 // app/api/cron/[[...slug]]/route.ts
 import { handle } from "@awbx/cronix-sdk/vercel";
-export const POST = handle(cron);
-export const GET = handle(cron);
+export const POST = handle((req) => cron.handle(req));
+export const GET = handle((req) => cron.handle(req));
 ```
 
-The adapters are purely optional — you can always wire `cron.handle(req)` by hand. Hono / Workers / Bun / Deno serve a Web `Request` directly, so they don't need an adapter.
+Because `handle()` takes any fetch fn — not the cron instance directly — you can compose freely (logging, auth, routing across multiple cron instances). Hono / Workers / Bun / Deno serve a Web `Request` natively, so they don't need an adapter.
 
 ## License
 
