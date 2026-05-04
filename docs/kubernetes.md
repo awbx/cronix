@@ -1,6 +1,6 @@
 # Backend: kubernetes
 
-> **Status (v1):** YAML rendering and `Validate` ship in this release. Live `client-go` reconciliation (`List`/`Create`/`Update`/`Delete` against the K8s API) lands in a follow-up phase — see PLAN.md §5d. Operators using K8s today can render YAML via the SDK and apply with `kubectl apply -f`.
+> **Status:** stable as of v0.3.0. `cronix apply --backend kubernetes` reconciles directly against the API server via `client-go`. Render-only YAML output is still available for operators who prefer `kubectl apply -f`.
 
 ## Layout
 
@@ -19,15 +19,31 @@ cronix.dev/index: "<idx>"
 cronix.dev/hash: <hash>
 ```
 
-cronix uses these labels to enumerate owned resources. Resources without `cronix.dev/managed=true` are never modified.
+cronix uses these labels to enumerate owned resources. Resources without `cronix.dev/managed=true` are never modified or deleted.
 
-## Rendering by hand (v1 fallback)
+## Reconciling a manifest
+
+```bash
+cronix apply \
+  --manifest ./billing.cronix.json \
+  --backend kubernetes \
+  --k8s-namespace billing \
+  --k8s-image awbx/cronix:v0.3.0
+```
+
+Out-of-cluster runs use `--kubeconfig <path>` (or `KUBECONFIG` env / `~/.kube/config`). When running cronix itself inside a pod, pass `--in-cluster`.
+
+`cronix list`, `cronix plan`, `cronix drift`, `cronix prune`, and `cronix show` all accept the same backend flags.
+
+## Rendering by hand
+
+Operators preferring GitOps-style YAML can still render the resources without instantiating a Backend:
 
 ```go
 import "github.com/awbx/cronix/go/internal/backends/kubernetes"
 
 yaml, err := kubernetes.RenderManifest(
-    "ghcr.io/awbx/cronix:v0.1.0",
+    "awbx/cronix:v0.3.0",
     "billing",          // namespace
     "billing",          // app
     job,                // a manifest.NormalizedJob
@@ -37,29 +53,31 @@ yaml, err := kubernetes.RenderManifest(
 )
 ```
 
-Then:
-
 ```bash
 echo "$yaml" | kubectl apply -f -
 ```
 
 ## Image
 
-The cronix image (`ghcr.io/awbx/cronix:<version>`) is `FROM gcr.io/distroless/static`, ~20 MB, multi-arch (amd64/arm64). Built and pushed by the GoReleaser release workflow.
+`awbx/cronix:<version>` is `FROM gcr.io/distroless/static`, ~20 MB, multi-arch (amd64/arm64). Built and pushed by goreleaser on every `v*` tag.
 
 ## Concurrency
 
-The CronJob spec sets `concurrencyPolicy: Forbid` and `backoffLimit: 0` — defense in depth. The shim is still the authoritative concurrency enforcer (D-028), but K8s preventing duplicate Pods catches misconfigurations early.
+The CronJob spec sets `concurrencyPolicy: Forbid` and `backoffLimit: 0` — defense in depth. The shim is still the authoritative concurrency enforcer (D-028); K8s preventing duplicate Pods catches misconfigurations early.
 
 ## Run history
 
-`kubectl get jobs -l cronix.dev/job=<job> --sort-by=.status.startTime` lists Job objects owned by the CronJob; `kubectl logs -l cronix.dev/job=<job>` aggregates Pod logs. K8s `Events` carry skip records when `concurrencyPolicy: Forbid` triggers.
+Until `cronix history` ships, use:
 
-## Helm
+```bash
+kubectl -n billing get jobs -l cronix.dev/job=reconcile --sort-by=.status.startTime
+kubectl -n billing logs -l cronix.dev/job=reconcile --max-log-requests 50
+```
 
-A pre-alpha Helm chart lives at `deploy/helm/cronix/`. It does **not** model individual jobs — operators apply rendered CronJob YAML separately. The chart provisions the cronix image, ServiceAccount, RBAC rules, and (optionally) a Job that runs `cronix apply` against an in-cluster manifest URL on a schedule.
+K8s `Events` on the CronJob carry skip records when `concurrencyPolicy: Forbid` fires.
 
 ## Limitations
 
 - K8s does not support `@every <duration>` natively; cronix translates the supported shortcuts (`@hourly`, `@daily`, etc.) but rejects `@every` at validate time. Use a 5-field cron expression instead.
 - K8s name length: `cronix-<app>-<job>-<idx>` must be ≤ 63 characters total. cronix Validates the (app, job) name combination at apply time.
+- `Update` is implemented as Delete+Create rather than Server-Side Apply, so there's a sub-second gap where a given (CronJob, ConfigMap) pair does not exist. Acceptable in CI deploy contexts.
