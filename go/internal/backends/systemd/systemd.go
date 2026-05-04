@@ -20,6 +20,7 @@ package systemd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -27,6 +28,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/manifest"
@@ -38,11 +40,18 @@ type SystemctlExecutor interface {
 	Run(ctx context.Context, args ...string) error
 }
 
+// JournalctlExecutor runs `journalctl` and returns the raw output. Used
+// by History; injectable so tests can feed canned journal records.
+type JournalctlExecutor interface {
+	Run(ctx context.Context, args ...string) ([]byte, error)
+}
+
 // Backend writes systemd timer + service unit pairs and drives systemctl.
 type Backend struct {
 	unitDir    string
 	triggerBin string
 	systemctl  SystemctlExecutor
+	journalctl JournalctlExecutor
 }
 
 // Options for constructing a Backend.
@@ -54,6 +63,8 @@ type Options struct {
 	// Systemctl runs `systemctl ...` invocations. Defaults to os/exec
 	// against the system PATH.
 	Systemctl SystemctlExecutor
+	// Journalctl runs `journalctl ...` invocations. Defaults to os/exec.
+	Journalctl JournalctlExecutor
 }
 
 // New constructs a Backend.
@@ -64,11 +75,15 @@ func New(opts Options) (*Backend, error) {
 	if opts.TriggerBin == "" {
 		return nil, fmt.Errorf("systemd: TriggerBin is required")
 	}
-	exec := opts.Systemctl
-	if exec == nil {
-		exec = defaultSystemctl{}
+	sx := opts.Systemctl
+	if sx == nil {
+		sx = defaultSystemctl{}
 	}
-	return &Backend{unitDir: opts.UnitDir, triggerBin: opts.TriggerBin, systemctl: exec}, nil
+	jx := opts.Journalctl
+	if jx == nil {
+		jx = defaultJournalctl{}
+	}
+	return &Backend{unitDir: opts.UnitDir, triggerBin: opts.TriggerBin, systemctl: sx, journalctl: jx}, nil
 }
 
 // Name returns "systemd-timer".
@@ -187,9 +202,39 @@ func (*Backend) Validate(job manifest.NormalizedJob) backends.ValidationResult {
 	return backends.ValidationResult{OK: len(issues) == 0, Issues: issues}
 }
 
-// History reads journalctl. Phase 6 wires this; returns nil for now.
-func (*Backend) History(_ context.Context, _ backends.HistoryOpts) ([]backends.HistoryEntry, error) {
-	return nil, nil
+// History reads journalctl for the units owned by (App, Job) and folds
+// per-attempt log lines into one HistoryEntry per terminal run. Records
+// older than HistoryOpts.Since are skipped; Limit truncates from the
+// most recent.
+//
+// The trigger shim emits structured slog JSON; History parses each
+// journald record's MESSAGE field as JSON and reassembles status from
+// the message tag (`trigger: success`, `trigger: app rejected`,
+// `trigger: retries exhausted`, `trigger: lock contended`).
+func (b *Backend) History(ctx context.Context, opts backends.HistoryOpts) ([]backends.HistoryEntry, error) {
+	if opts.App == "" || opts.Job == "" {
+		return nil, fmt.Errorf("systemd: history requires App + Job")
+	}
+	args := []string{
+		"--output=json",
+		"--no-pager",
+		"--unit", fmt.Sprintf("cronix-%s-%s-*.service", opts.App, opts.Job),
+	}
+	if !opts.Since.IsZero() {
+		args = append(args, "--since", opts.Since.UTC().Format("2006-01-02 15:04:05"))
+	}
+	if !opts.Until.IsZero() {
+		args = append(args, "--until", opts.Until.UTC().Format("2006-01-02 15:04:05"))
+	}
+	raw, err := b.journalctl.Run(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("systemd: journalctl: %w", err)
+	}
+	entries := parseJournalRecords(raw, opts)
+	if opts.Limit > 0 && len(entries) > opts.Limit {
+		entries = entries[len(entries)-opts.Limit:]
+	}
+	return entries, nil
 }
 
 // Ensure verifies systemd is the init system and the unit dir exists.
@@ -426,6 +471,153 @@ func (defaultSystemctl) Run(ctx context.Context, args ...string) error {
 		return fmt.Errorf("systemctl %s: %w (output: %s)", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// defaultJournalctl shells out to the system `journalctl` binary.
+type defaultJournalctl struct{}
+
+func (defaultJournalctl) Run(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "journalctl", args...) //#nosec G204 — args are constructed internally
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("journalctl %s: %w", strings.Join(args, " "), err)
+	}
+	return out, nil
+}
+
+// journalRecord is the subset of fields we read from `journalctl --output=json`.
+type journalRecord struct {
+	Timestamp string `json:"__REALTIME_TIMESTAMP"`
+	Unit      string `json:"_SYSTEMD_UNIT"`
+	Message   string `json:"MESSAGE"`
+}
+
+// shimEvent is the subset of slog-emitted fields the shim writes per attempt.
+type shimEvent struct {
+	Time    string `json:"time"`
+	Level   string `json:"level"`
+	Msg     string `json:"msg"`
+	RunID   string `json:"run_id"`
+	Status  int    `json:"status"`
+	Attempt int    `json:"attempt"`
+}
+
+// parseJournalRecords folds journalctl JSON output into one HistoryEntry
+// per terminal run. The shim emits multiple slog records per fire; we
+// keep the *last* one per run_id, since that one carries the terminal
+// status.
+func parseJournalRecords(raw []byte, opts backends.HistoryOpts) []backends.HistoryEntry {
+	type byRun struct {
+		entry backends.HistoryEntry
+		seen  bool
+	}
+	runs := map[string]*byRun{}
+	order := make([]string, 0)
+	for line := range strings.SplitSeq(strings.TrimRight(string(raw), "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var rec journalRecord
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			continue
+		}
+		var ev shimEvent
+		if err := json.Unmarshal([]byte(rec.Message), &ev); err != nil {
+			continue
+		}
+		if ev.RunID == "" {
+			continue
+		}
+		when := parseJournalTimestamp(rec.Timestamp)
+		status, terminal := classifyShimEvent(ev.Msg)
+		if status == "" {
+			continue
+		}
+		app, job := unitToAppJob(rec.Unit)
+		entry, ok := runs[ev.RunID]
+		if !ok {
+			entry = &byRun{}
+			runs[ev.RunID] = entry
+			order = append(order, ev.RunID)
+		}
+		he := &entry.entry
+		if !entry.seen || terminal {
+			he.RunID = ev.RunID
+			he.App = app
+			he.Job = job
+			he.Attempt = ev.Attempt
+			he.Status = status
+			he.Source = "journald"
+			he.FinishedAt = when
+			if he.StartedAt.IsZero() || when.Before(he.StartedAt) {
+				he.StartedAt = when
+			}
+			entry.seen = true
+		}
+	}
+	out := make([]backends.HistoryEntry, 0, len(order))
+	for _, id := range order {
+		he := runs[id].entry
+		if opts.Status != "" && he.Status != opts.Status {
+			continue
+		}
+		out = append(out, he)
+	}
+	return out
+}
+
+// classifyShimEvent maps the shim's slog `msg` tag to a HistoryEntry
+// status. Returns ("", false) when the message isn't a fire-lifecycle
+// event (early errors, lock acquire diagnostics, etc.).
+func classifyShimEvent(msg string) (status string, terminal bool) {
+	switch msg {
+	case "trigger: success":
+		return "ok", true
+	case "trigger: app rejected":
+		return "failed", true
+	case "trigger: retries exhausted":
+		return "failed", true
+	case "trigger: lock contended":
+		return "lock-contended", true
+	case "trigger: panic":
+		return "failed", true
+	case "trigger: attempt failed", "trigger: server error":
+		return "failed", false
+	}
+	return "", false
+}
+
+// parseJournalTimestamp converts journalctl's `__REALTIME_TIMESTAMP`
+// (microseconds since epoch as a decimal string) into time.Time.
+func parseJournalTimestamp(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	micros, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return time.Time{}
+	}
+	return time.UnixMicro(micros).UTC()
+}
+
+// unitToAppJob extracts (app, job) from a unit name like
+// "cronix-billing-reconcile-0.service". Multi-segment app/job names are
+// supported as long as they don't contain a literal "-".
+func unitToAppJob(unit string) (app, job string) {
+	name := strings.TrimSuffix(unit, ".service")
+	if !strings.HasPrefix(name, "cronix-") {
+		return "", ""
+	}
+	body := strings.TrimPrefix(name, "cronix-")
+	// Strip trailing "-<idx>".
+	if i := strings.LastIndex(body, "-"); i > 0 {
+		body = body[:i]
+	}
+	if i := strings.IndexByte(body, '-'); i > 0 {
+		return body[:i], body[i+1:]
+	}
+	return body, ""
 }
 
 var _ backends.Backend = (*Backend)(nil)
