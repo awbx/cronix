@@ -142,6 +142,28 @@ app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) =>
 
 `cron.handle(req, opts)` is the **zero-glue** path. For more control there are explicit `cron.verifyManifest(req)` / `cron.verifyTrigger(req)` methods, plus `cron.on(name, handler)` for late-binding handlers from another file. Both methods accept the same `{vars}` option. See [`ts/examples/`](./ts/examples/) for the runnable hono / express / fastify variants.
 
+### Framework adapters
+
+For frameworks that don't speak Web Fetch natively, the SDK ships subpath adapters that lift the framework's request/response into `cron.handle` for you — one line of glue per app:
+
+```ts
+// Express
+import { mount } from "@awbx/cronix-sdk/express";
+mount(app, cron, { vars: (req) => ({ traceId: req.header("x-trace-id") ?? crypto.randomUUID() }) });
+
+// Fastify
+import { mount } from "@awbx/cronix-sdk/fastify";
+mount(app, cron, { vars: (req) => ({ traceId: crypto.randomUUID() }) });
+
+// Vercel (Next.js route handlers / Edge functions — Web Request native)
+// app/api/cron/[[...slug]]/route.ts
+import { handle } from "@awbx/cronix-sdk/vercel";
+export const POST = handle(cron);
+export const GET = handle(cron);
+```
+
+The adapters are purely optional — you can always wire `cron.handle(req)` by hand. Hono / Workers / Bun / Deno serve a Web `Request` directly, so they don't need an adapter.
+
 ## License
 
 MIT © Abdelhadi Sabani
