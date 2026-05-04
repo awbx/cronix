@@ -1,13 +1,15 @@
 apiVersion: v2
 name: cronix
-description: Cron jobs as code — reconciler for app-declared cron manifests
+description: Cron jobs as code — runs `cronix apply` against an in-cluster manifest endpoint to reconcile cron jobs as Kubernetes CronJobs.
 type: application
-version: 0.0.1-alpha.1
-appVersion: "0.0.0"
+version: 0.4.0
+appVersion: "0.4.0"
 keywords:
   - cron
   - scheduler
-  - kubernetes
+  - cronix
+  - reconciler
+  - gitops
 home: https://github.com/awbx/cronix
 sources:
   - https://github.com/awbx/cronix
