@@ -81,13 +81,23 @@ go vet ./...
 goreleaser build --snapshot --clean
 ```
 
-## Install (pre-release)
+## Install
 
 ```bash
-# Go binary
+# CLI — one-liner (Linux/macOS, amd64/arm64)
+curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh | sh
+
+# CLI — pinned version + custom install dir
+curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh \
+  | CRONIX_VERSION=v0.1.1 INSTALL_DIR=/usr/local/bin sh
+
+# CLI — Go install
 go install github.com/awbx/cronix/go/cmd/cronix@latest
 
-# TypeScript SDK (once published — Phase 7)
+# CLI — Docker
+docker pull awbx/cronix
+
+# TypeScript SDK
 pnpm add @awbx/cronix-sdk
 ```
 
