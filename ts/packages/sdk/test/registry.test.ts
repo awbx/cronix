@@ -556,6 +556,65 @@ describe("createCron — typed env (Bindings) and var (Variables)", () => {
     expect(varKeys).toEqual([]);
   });
 
+  it("default vars from createCron merge with per-fire vars; per-fire wins on collision", async () => {
+    type Env = { Variables: { region: string; traceId: string; tenantId: number } };
+    const cron = createCron<Env>({
+      app: "x",
+      baseUrl: "https://x.example.com",
+      secret: SECRET,
+      vars: { region: "eu-west-1", traceId: "trace-default", tenantId: 0 },
+    });
+    let observed: { region: string; traceId: string; tenantId: number } | null = null;
+    cron.register({
+      name: "j",
+      schedule: "@hourly",
+      handler: async (ctx) => {
+        observed = { region: ctx.var.region, traceId: ctx.var.traceId, tenantId: ctx.var.tenantId };
+        return { ok: true };
+      },
+    });
+    const path = "/api/v1/scheduled/j";
+    const { header } = await sign({ secret: SECRET, method: "POST", path, body: enc(""), timestamp: NOW });
+    const req = new Request(`https://x.example.com${path}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header },
+    });
+    // Per-fire passes traceId + tenantId; region falls through from createCron defaults.
+    const res = await cron.handle(req, {
+      now: NOW,
+      vars: { region: "eu-west-1", traceId: "trace-fire", tenantId: 99 },
+    });
+    expect(res.status).toBe(200);
+    expect(observed).toEqual({ region: "eu-west-1", traceId: "trace-fire", tenantId: 99 });
+  });
+
+  it("default vars survive when handle passes no vars at all", async () => {
+    type Env = { Variables: { region: string } };
+    const cron = createCron<Env>({
+      app: "x",
+      baseUrl: "https://x.example.com",
+      secret: SECRET,
+      vars: { region: "us-east-1" },
+    });
+    let region = "";
+    cron.register({
+      name: "j",
+      schedule: "@hourly",
+      handler: async (ctx) => {
+        region = ctx.var.region;
+        return { ok: true };
+      },
+    });
+    const path = "/api/v1/scheduled/j";
+    const { header } = await sign({ secret: SECRET, method: "POST", path, body: enc(""), timestamp: NOW });
+    const req = new Request(`https://x.example.com${path}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header },
+    });
+    await cron.handle(req, { now: NOW }); // no vars supplied per-fire
+    expect(region).toBe("us-east-1");
+  });
+
   it("vars passed to verifyTrigger flow into ctx.var", async () => {
     type Env = { Variables: { who: string } };
     const cron = createCron<Env>({

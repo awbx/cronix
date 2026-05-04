@@ -11,7 +11,9 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
  * - **Variables** are per-fire values supplied at `cron.handle(req, {vars: {...}})`
  *   (or `verifyTrigger` / `verifyManifest`). Examples: a trace id, a tenant id
  *   derived from the request. Available as `ctx.var.<key>`, plus runtime
- *   `ctx.get(key)` / `ctx.set(key, val)`.
+ *   `ctx.get(key)` / `ctx.set(key, val)`. App-wide defaults can be set at
+ *   `createCron({vars: {...}})`; per-fire vars are merged on top, winning on
+ *   key collisions.
  *
  * ```ts
  * type Env = {
