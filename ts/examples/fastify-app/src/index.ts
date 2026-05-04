@@ -1,8 +1,5 @@
-import { createCron, MANIFEST_PATH } from "@awbx/cronix-sdk";
-import Fastify from "fastify";
-
-// Tier 2 — explicit verifyManifest / verifyTrigger. Useful when you want
-// logging, metrics, or auth-attribution between verify and run.
+import { type CronInstance, createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 
 const cron = createCron({
   app: "billing-service",
@@ -22,39 +19,31 @@ cron.register({
 
 const app = Fastify({ logger: true });
 
-// Replace fastify's built-in JSON parser so signature verification gets the
-// raw bytes-as-sent. Without this, application/json bodies get parsed into
-// objects and we can't recover the exact bytes.
+// Capture raw bytes-as-sent so signature verification has the exact body.
 app.removeAllContentTypeParsers();
-app.addContentTypeParser("*", { parseAs: "buffer" }, (_req, body, done) => {
-  done(null, body);
-});
+app.addContentTypeParser("*", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
 
-app.get(MANIFEST_PATH, async (req, reply) => {
-  const r = await cron.verifyManifest({
-    method: req.method,
-    path: req.url.split("?")[0] ?? req.url,
-    body: new Uint8Array(0),
-    headers: req.headers as Record<string, string | string[] | undefined>,
-  });
-  if (!r.ok) return reply.code(r.status).send({ code: r.code, message: r.message });
-  return reply.code(200).send(cron.manifest());
-});
+const wrap = liftToFetch(cron);
+app.all(MANIFEST_PATH, wrap);
+app.all(`${TRIGGER_PATH_PREFIX}:name`, wrap);
 
-app.post("/api/v1/scheduled/:name", async (req, reply) => {
-  const buf = req.body instanceof Buffer ? req.body : Buffer.alloc(0);
-  const r = await cron.verifyTrigger({
-    method: req.method,
-    path: req.url.split("?")[0] ?? req.url,
-    body: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength),
-    headers: req.headers as Record<string, string | string[] | undefined>,
-  });
-  if (!r.ok) return reply.code(r.status).send({ code: r.code, message: r.message });
-  app.log.info({ job: r.ctx.name, runId: r.ctx.runId, attempt: r.ctx.attempt }, "cron fired");
-  const out = await r.run();
-  const status = out.status ?? (out.ok ? 200 : 500);
-  return out.body !== undefined ? reply.code(status).send(out.body) : reply.code(status).send();
-});
+// Adapt Fastify req/reply to Web Fetch so we can hand the request to cron.handle().
+function liftToFetch(cron: CronInstance) {
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    const init: RequestInit = {
+      method: req.method,
+      headers: req.headers as Record<string, string>,
+    };
+    if (req.method !== "GET" && req.body instanceof Buffer) init.body = req.body;
+    const webReq = new globalThis.Request(`http://${req.headers.host}${req.url}`, init);
+    const webRes = await cron.handle(webReq);
+    reply.code(webRes.status);
+    webRes.headers.forEach((v, k) => {
+      reply.header(k, v);
+    });
+    return reply.send(Buffer.from(await webRes.arrayBuffer()));
+  };
+}
 
 const port = Number(process.env.PORT ?? 3000);
 app.listen({ port, host: "0.0.0.0" }).catch((err) => {
