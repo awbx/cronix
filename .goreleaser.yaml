@@ -46,6 +46,7 @@ snapshot:
 dockers:
   - image_templates:
       - "ghcr.io/awbx/cronix:{{ .Version }}-amd64"
+      - "docker.io/awbx/cronix:{{ .Version }}-amd64"
     use: buildx
     goos: linux
     goarch: amd64
@@ -56,6 +57,7 @@ dockers:
       - "--label=org.opencontainers.image.version={{ .Version }}"
   - image_templates:
       - "ghcr.io/awbx/cronix:{{ .Version }}-arm64"
+      - "docker.io/awbx/cronix:{{ .Version }}-arm64"
     use: buildx
     goos: linux
     goarch: arm64
@@ -74,6 +76,14 @@ docker_manifests:
     image_templates:
       - "ghcr.io/awbx/cronix:{{ .Version }}-amd64"
       - "ghcr.io/awbx/cronix:{{ .Version }}-arm64"
+  - name_template: "docker.io/awbx/cronix:{{ .Version }}"
+    image_templates:
+      - "docker.io/awbx/cronix:{{ .Version }}-amd64"
+      - "docker.io/awbx/cronix:{{ .Version }}-arm64"
+  - name_template: "docker.io/awbx/cronix:latest"
+    image_templates:
+      - "docker.io/awbx/cronix:{{ .Version }}-amd64"
+      - "docker.io/awbx/cronix:{{ .Version }}-arm64"
 
 changelog:
   sort: asc
