@@ -2,8 +2,14 @@
 
 ## Status
 
-**Draft.** Pre-alpha; v1 in active construction. The implementation phases that
-build out this RFC are tracked in `/PLAN.md`.
+**Stable for v1 (release candidate).** The on-the-wire contract — manifest
+shape, header format, signed payload, conformance vectors — is frozen.
+Code paths backing the contract are implemented except where flagged in
+the Backend Fidelity Matrix (live `client-go` integration for the
+kubernetes backend and `systemctl`/`journalctl` shell-out for the
+systemd-timer backend remain follow-up work; rendering and `Validate`
+ship now). The protocol is the product; a v1.0.0-rc.1 tag is the gate
+to v1.0.0.
 
 ## Summary
 
@@ -892,7 +898,73 @@ cronix drift --manifest ./manifest.json --backend crontab \
 
 ## Deployment
 
-*(Phase 7 will populate this.)*
+### Bare-metal — crontab
+
+1. Install the cronix binary at a stable absolute path.
+   ```bash
+   go install github.com/awbx/cronix/go/cmd/cronix@latest
+   sudo cp "$(go env GOPATH)/bin/cronix" /usr/local/bin/cronix
+   sudo mkdir -p /etc/cronix/jobs /var/lock/cronix
+   ```
+2. Set the secrets the reconciler and the app share — typically as
+   environment variables under your secret manager.
+3. From CI on every deploy:
+   ```bash
+   cronix apply \
+     --manifest https://billing.internal/.well-known/cron-manifest \
+     --backend crontab \
+     --crontab-path /etc/crontab \
+     --trigger-bin /usr/local/bin/cronix \
+     --spec-dir /etc/cronix/jobs \
+     --secret-ref env:CRON_SECRET_V2 --secret-ref env:CRON_SECRET_V1
+   ```
+
+   `apply` is idempotent — no host-scheduler reload, no log churn when
+   nothing has changed (D-027).
+
+See `docs/crontab.md` for the per-backend setup guide.
+
+### Bare-metal — systemd-timer (v1)
+
+The `systemd-timer` backend ships with `Validate` and unit-file
+rendering in v1; live reconciliation is a follow-up phase (PLAN.md
+§5c). Operators using systemd today can render the unit pair via the
+SDK and apply with `systemctl daemon-reload && systemctl enable --now`.
+
+See `docs/systemd.md`.
+
+### Docker
+
+The cronix image at `ghcr.io/awbx/cronix:<version>` is `FROM
+gcr.io/distroless/static-debian12:nonroot`, multi-arch
+(amd64 + arm64), under 30 MB. Built and pushed by the GoReleaser
+release workflow.
+
+```bash
+docker run --rm ghcr.io/awbx/cronix:latest version
+```
+
+### Kubernetes
+
+The `kubernetes` backend ships with `Validate` and CronJob+ConfigMap
+YAML rendering in v1; live `client-go` reconciliation is a follow-up
+phase (PLAN.md §5d). The pre-alpha Helm chart at
+`deploy/helm/cronix/` provisions the cronix image, ServiceAccount,
+RBAC, and an in-cluster `cronix apply` CronJob that reconciles a
+named manifest URL on a schedule.
+
+See `docs/kubernetes.md`.
+
+### Distribution channels
+
+| Channel | Status |
+|---|---|
+| `go install github.com/awbx/cronix/go/cmd/cronix@latest` | works once the repo is published |
+| GitHub Releases (Linux/macOS/Windows tarballs+zip, signed checksums) | wired via GoReleaser; first tag pending |
+| Docker image (`ghcr.io/awbx/cronix:<version>`) | wired via GoReleaser; pushed on tag |
+| `npm install @cronix/sdk` | wired via Changesets; first publish pending |
+| Homebrew tap | follow-up |
+| deb / rpm | follow-up |
 
 ## Alternatives Considered
 
@@ -924,6 +996,17 @@ cronix drift --manifest ./manifest.json --backend crontab \
 
 ## Changelog
 
+- **2026-05-04 — Phase 7.** Polish: public Go SDK at
+  `go/pkg/cronsdk` (HMAC `Verify` + `VerifyHTTP` convenience + X-Cron-*
+  header constants, re-exporting from internal/auth and
+  internal/headers, with conformance against the same auth-vectors).
+  Runnable Go example at `go/examples/go-app`. Per-backend setup guides
+  at `docs/{crontab,systemd,kubernetes}.md`. `CONTRIBUTING.md` and
+  `SECURITY.md`. Pre-alpha Helm chart at `deploy/helm/cronix/` —
+  ServiceAccount + RBAC + an optional `cronix apply` CronJob. RFC
+  §Deployment (bare-metal crontab/systemd, Docker, Kubernetes,
+  distribution-channel matrix). Status promoted from Draft to "Stable
+  for v1 (release candidate)".
 - **2026-05-04 — Phase 6.** CLI subcommands: `validate`, `plan`/`diff`,
   `apply`, `list`, `drift`, `completion` (in addition to `version` from
   Phase 0 and `trigger` from Phase 5). Stable JSON output via `-o json`

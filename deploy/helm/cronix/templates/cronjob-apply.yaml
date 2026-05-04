@@ -1,0 +1,39 @@
+{{- if .Values.manifestUrl }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "cronix.fullname" . }}-apply
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cronix.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.applySchedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ default (include "cronix.fullname" .) .Values.serviceAccount.name }}
+          containers:
+          - name: cronix
+            image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+            imagePullPolicy: {{ .Values.image.pullPolicy }}
+            args:
+              - apply
+              - --manifest={{ .Values.manifestUrl }}
+              - --backend=kubernetes
+              - --spec-dir={{ .Values.specDir }}
+              {{- range .Values.secretRefs }}
+              - --secret-ref={{ . }}
+              {{- end }}
+            env:
+              {{- with .Values.env }}
+              {{- toYaml . | nindent 14 }}
+              {{- end }}
+            resources:
+              {{- toYaml .Values.resources | nindent 14 }}
+{{- end }}

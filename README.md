@@ -54,7 +54,14 @@ Future SDKs (Python, Ruby, …) get their own top-level directory. The `spec/` d
 
 ## Status
 
-Pre-alpha. The implementation phases that build out v1 are tracked in [PLAN.md](./PLAN.md). The authoritative on-the-wire spec lives in [spec/RFC.md](./spec/RFC.md).
+v1 release candidate. The on-the-wire spec is frozen; per-backend live integration for systemd-timer and kubernetes is the remaining follow-up. The authoritative on-the-wire spec lives in [spec/RFC.md](./spec/RFC.md). Implementation history is tracked in [PLAN.md](./PLAN.md).
+
+## Documentation
+
+- [spec/RFC.md](./spec/RFC.md) — protocol, manifest, authentication, SDK contract, backend contract, CLI, deployment
+- [docs/crontab.md](./docs/crontab.md), [docs/systemd.md](./docs/systemd.md), [docs/kubernetes.md](./docs/kubernetes.md) — per-backend setup
+- [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md)
+- [ts/examples/express-app](./ts/examples/express-app), [ts/examples/fastify-app](./ts/examples/fastify-app), [ts/examples/hono-app](./ts/examples/hono-app), [ts/examples/hand-rolled](./ts/examples/hand-rolled), [go/examples/go-app](./go/examples/go-app)
 
 ## Build
 
