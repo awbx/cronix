@@ -54,6 +54,15 @@ type Options struct {
 	// IntendedFireTime is forwarded to the X-Cron-Fire-Time header. When
 	// the host scheduler does not provide it, the shim uses Now.
 	IntendedFireTime time.Time
+	// Spec, when set, takes precedence over SpecDir and skips on-disk
+	// loading. Used by the AWS Lambda shim where the EventBridge event
+	// itself carries the spec — there is no host filesystem to read.
+	Spec *SpecFile
+	// SecretResolver overrides the default env/file/raw resolver. The
+	// AWS Lambda shim uses this to resolve `ssm:` and `secretsmanager:`
+	// references against AWS APIs without polluting the trigger package
+	// with cloud SDK imports.
+	SecretResolver func(refs []string) ([]string, error)
 }
 
 // Result describes the outcome of a single fire.
@@ -90,13 +99,21 @@ func Run(ctx context.Context, opts Options) (res Result) {
 		}
 	}()
 
-	spec, err := LoadSpec(opts.SpecDir, opts.App, opts.JobName)
-	if err != nil {
-		logger.Error("trigger: load spec", slog.String("err", err.Error()))
-		return Result{ExitCode: ExitInternal, Err: err}
+	spec := opts.Spec
+	if spec == nil {
+		var err error
+		spec, err = LoadSpec(opts.SpecDir, opts.App, opts.JobName)
+		if err != nil {
+			logger.Error("trigger: load spec", slog.String("err", err.Error()))
+			return Result{ExitCode: ExitInternal, Err: err}
+		}
 	}
 
-	secrets, err := ResolveSecrets(spec.SecretRefs)
+	resolve := opts.SecretResolver
+	if resolve == nil {
+		resolve = ResolveSecrets
+	}
+	secrets, err := resolve(spec.SecretRefs)
 	if err != nil {
 		logger.Error("trigger: resolve secrets", slog.String("err", err.Error()))
 		return Result{ExitCode: ExitInternal, Err: err}

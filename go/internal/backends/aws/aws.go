@@ -41,6 +41,7 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -53,6 +54,7 @@ import (
 
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/manifest"
+	"github.com/awbx/cronix/go/internal/trigger"
 )
 
 // descriptionPrefix marks every cronix-owned EventBridge Schedule.
@@ -82,6 +84,7 @@ type Backend struct {
 	scheduleGroup string
 	targetArn     string
 	roleArn       string
+	secretRefs    []string
 }
 
 // Options for constructing a Backend.
@@ -99,6 +102,11 @@ type Options struct {
 	// RoleArn is the IAM role EventBridge assumes to invoke TargetArn.
 	// Required.
 	RoleArn string
+	// SecretRefs are the operator-supplied --secret-ref values forwarded
+	// to the Lambda shim via the EventBridge Schedule Input. The Lambda
+	// resolves them at fire time (env: / file: / raw: locally; ssm: /
+	// secretsmanager: via AWS APIs).
+	SecretRefs []string
 
 	// Scheduler / STS clients. When nil, a real SDK client is built
 	// from the SDK's default config chain. Tests inject fakes.
@@ -142,6 +150,7 @@ func New(ctx context.Context, opts Options) (*Backend, error) {
 		scheduleGroup: group,
 		targetArn:     opts.TargetArn,
 		roleArn:       opts.RoleArn,
+		secretRefs:    append([]string(nil), opts.SecretRefs...),
 	}, nil
 }
 
@@ -227,6 +236,10 @@ func (b *Backend) Create(ctx context.Context, app string, job manifest.Normalize
 		}
 		hash := hashJobSchedule(job, i)
 		name := scheduleName(app, job.Name, i)
+		payload, err := b.buildTargetInput(app, job, i)
+		if err != nil {
+			return fmt.Errorf("aws: build target input for %s: %w", name, err)
+		}
 		input := &scheduler.CreateScheduleInput{
 			Name:               awssdk.String(name),
 			GroupName:          awssdk.String(b.scheduleGroup),
@@ -238,7 +251,7 @@ func (b *Backend) Create(ctx context.Context, app string, job manifest.Normalize
 			Target: &schedulertypes.Target{
 				Arn:     awssdk.String(b.targetArn),
 				RoleArn: awssdk.String(b.roleArn),
-				Input:   awssdk.String(targetInput(app, job.Name, i)),
+				Input:   awssdk.String(payload),
 			},
 			ScheduleExpressionTimezone: awssdk.String(timezone(job)),
 		}
@@ -311,10 +324,26 @@ func scheduleName(app, job string, idx int) string {
 	return fmt.Sprintf("cronix-%s-%s-%d", app, job, idx)
 }
 
-// targetInput is the JSON payload EventBridge passes to the target. The
-// Lambda shim reads this to know which (app, job, index) it's firing.
-func targetInput(app, jobName string, idx int) string {
-	return fmt.Sprintf(`{"app":%q,"job":%q,"index":%d}`, app, jobName, idx)
+// buildTargetInput is the JSON payload EventBridge passes to the
+// Lambda shim. We embed the full SpecFile inline so the Lambda is
+// self-contained — no separate spec store (S3, SSM Parameter Store)
+// required for v1. The Lambda parses this directly into a SpecFile.
+//
+// AWS's documented Schedule Input limit is 256 KiB. Typical bodies fit
+// comfortably; oversize bodies are a future concern (offload to S3,
+// pass the s3 URI inline).
+func (b *Backend) buildTargetInput(app string, job manifest.NormalizedJob, idx int) (string, error) {
+	spec := trigger.SpecFile{
+		App:           app,
+		Job:           job,
+		SecretRefs:    b.secretRefs,
+		ScheduleIndex: idx,
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		return "", fmt.Errorf("marshal spec: %w", err)
+	}
+	return string(raw), nil
 }
 
 func buildDescription(app, jobName string, idx int, hash string) string {

@@ -157,6 +157,7 @@ func buildBackend(opts backendOpts) (backends.Backend, error) {
 			ScheduleGroup: opts.awsScheduleGroup,
 			TargetArn:     opts.awsTargetArn,
 			RoleArn:       opts.awsRoleArn,
+			SecretRefs:    opts.secretRefs,
 		})
 	default:
 		return nil, fmt.Errorf("unknown backend %q", opts.name)
