@@ -67,6 +67,26 @@ dockers:
       - "--label=org.opencontainers.image.source=https://github.com/awbx/cronix"
       - "--label=org.opencontainers.image.version={{ .Version }}"
 
+nfpms:
+  - id: cronix
+    package_name: cronix
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    vendor: cronix
+    homepage: https://github.com/awbx/cronix
+    maintainer: Abdelhadi Sabani <asabani.work@gmail.com>
+    description: Cron jobs as code — reconciler that turns application-declared manifests into native host scheduler entries.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/local/bin
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/doc/cronix/LICENSE
+      - src: ./README.md
+        dst: /usr/share/doc/cronix/README.md
+
 docker_manifests:
   - name_template: "ghcr.io/awbx/cronix:{{ .Version }}"
     image_templates:
