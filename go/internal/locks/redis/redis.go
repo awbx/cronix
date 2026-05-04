@@ -88,6 +88,9 @@ func (b *Backend) Acquire(ctx context.Context, key string, ttl time.Duration) (l
 	for {
 		got, err := b.client.SetNX(ctx, full, token, ttl).Result()
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return nil, locks.ErrContended
+			}
 			return nil, fmt.Errorf("redis lock: SETNX %s: %w", full, err)
 		}
 		if got {
