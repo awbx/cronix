@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCron, HeaderRunId, HeaderSignature, sign } from "../src/core/index.js";
+import { createCron, HeaderRunId, HeaderSignature, MANIFEST_PATH, sign } from "../src/core/index.js";
 
 const SECRET = "whsec_test_primary_aaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const NOW = 1_730_000_000;
@@ -228,5 +228,249 @@ describe("createCron — verify(trigger) and run()", () => {
     if (result.ok && result.kind === "trigger") {
       expect(result.secretIndex).toBe(1);
     }
+  });
+});
+
+const triggerPath = "/api/v1/scheduled/reconcile-payments";
+
+describe("createCron — verifyManifest / verifyTrigger (split methods)", () => {
+  it("verifyManifest accepts a Web Request directly", async () => {
+    const { cron } = makeInstance();
+    const { header } = await sign({
+      secret: SECRET,
+      method: "GET",
+      path: MANIFEST_PATH,
+      body: enc(""),
+      timestamp: NOW,
+    });
+    const req = new Request(`https://billing.example.com${MANIFEST_PATH}`, {
+      method: "GET",
+      headers: { [HeaderSignature]: header },
+    });
+    const r = await cron.verifyManifest(req, { now: NOW });
+    expect(r.ok).toBe(true);
+  });
+
+  it("verifyTrigger accepts a Web Request directly", async () => {
+    const { cron, calls } = makeInstance();
+    const body = enc('{"hello":"world"}');
+    const { header } = await sign({ secret: SECRET, method: "POST", path: triggerPath, body, timestamp: NOW });
+    const req = new Request(`https://billing.example.com${triggerPath}`, {
+      method: "POST",
+      headers: {
+        [HeaderSignature]: header,
+        [HeaderRunId]: "run-web",
+        "x-cron-attempt": "3",
+      },
+      body,
+    });
+    const r = await cron.verifyTrigger(req, { now: NOW });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.ctx.runId).toBe("run-web");
+    expect(r.ctx.attempt).toBe(3);
+    const out = await r.run();
+    expect(out.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("verifyManifest also accepts a VerifyRequestObject (Node-friendly)", async () => {
+    const { cron } = makeInstance();
+    const { header } = await sign({
+      secret: SECRET,
+      method: "GET",
+      path: MANIFEST_PATH,
+      body: enc(""),
+      timestamp: NOW,
+    });
+    const r = await cron.verifyManifest({
+      method: "GET",
+      path: MANIFEST_PATH,
+      body: new Uint8Array(0),
+      headers: { [HeaderSignature.toLowerCase()]: header },
+      now: NOW,
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("error result.toResponse() emits a JSON Response with the right status", async () => {
+    const { cron } = makeInstance();
+    const r = await cron.verifyManifest({
+      method: "GET",
+      path: MANIFEST_PATH,
+      body: new Uint8Array(0),
+      headers: {},
+      now: NOW,
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    const res = r.toResponse();
+    expect(res.status).toBe(401);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const body = (await res.json()) as { code: string; message: string };
+    expect(body.code).toBe("MissingSignature");
+    expect(typeof body.message).toBe("string");
+  });
+});
+
+describe("createCron — handle (zero-glue dispatcher)", () => {
+  it("returns the manifest JSON for a signed manifest GET", async () => {
+    const { cron } = makeInstance();
+    const { header } = await sign({
+      secret: SECRET,
+      method: "GET",
+      path: MANIFEST_PATH,
+      body: enc(""),
+      timestamp: NOW,
+    });
+    const req = new Request(`https://billing.example.com${MANIFEST_PATH}`, {
+      method: "GET",
+      headers: { [HeaderSignature]: header },
+    });
+    const res = await cron.handle(req, { now: NOW });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { app: string; jobs: { name: string }[] };
+    expect(body.app).toBe("billing");
+    expect(body.jobs.map((j) => j.name)).toEqual(["reconcile-payments", "settle-invoices"]);
+  });
+
+  it("dispatches a trigger and returns the handler's response", async () => {
+    const { cron, calls } = makeInstance();
+    const body = enc('{"x":1}');
+    const { header } = await sign({ secret: SECRET, method: "POST", path: triggerPath, body, timestamp: NOW });
+    const req = new Request(`https://billing.example.com${triggerPath}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header, [HeaderRunId]: "run-handle" },
+      body,
+    });
+    const res = await cron.handle(req, { now: NOW });
+    expect(res.status).toBe(202);
+    expect(await res.text()).toBe("accepted");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.runId).toBe("run-handle");
+  });
+
+  it("returns 401 on tampered body", async () => {
+    const { cron } = makeInstance();
+    const { header } = await sign({
+      secret: SECRET,
+      method: "POST",
+      path: triggerPath,
+      body: enc("original"),
+      timestamp: NOW,
+    });
+    const req = new Request(`https://billing.example.com${triggerPath}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header },
+      body: enc("tampered"),
+    });
+    const res = await cron.handle(req, { now: NOW });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 for paths that aren't manifest or trigger", async () => {
+    const { cron } = makeInstance();
+    const req = new Request("https://billing.example.com/nope", { method: "GET" });
+    const res = await cron.handle(req, { now: NOW });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("UnknownPath");
+  });
+});
+
+describe("createCron — late handler binding via cron.on()", () => {
+  it("register without handler + on() binds and dispatches", async () => {
+    const cron = createCron({ app: "billing", baseUrl: "https://billing.example.com", secret: SECRET });
+    cron.register({ name: "ping", schedule: "@hourly", auth: { secret_refs: ["env:S"] } });
+
+    const path = "/api/v1/scheduled/ping";
+    const { header } = await sign({ secret: SECRET, method: "POST", path, body: enc(""), timestamp: NOW });
+    const req = new Request(`https://billing.example.com${path}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header },
+    });
+
+    // Before binding — dispatch resolves to NoHandler.
+    const before = await cron.verifyTrigger(req.clone(), { now: NOW });
+    expect(before.ok).toBe(true);
+    if (!before.ok) return;
+    const out1 = await before.run();
+    expect(out1.ok).toBe(false);
+    expect(out1.status).toBe(503);
+    expect(String(out1.body)).toContain("NoHandler");
+
+    // Bind and try again.
+    let called = false;
+    cron.on("ping", () => {
+      called = true;
+      return { ok: true, status: 200 };
+    });
+    const after = await cron.verifyTrigger(req, { now: NOW });
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+    const out2 = await after.run();
+    expect(out2.ok).toBe(true);
+    expect(called).toBe(true);
+  });
+
+  it("on() throws when binding to an unknown job", () => {
+    const cron = createCron({ app: "x", baseUrl: "https://x.example.com", secret: SECRET });
+    expect(() => cron.on("nonexistent", () => ({ ok: true }))).toThrow(/no job registered/);
+  });
+
+  it("on() rebinds the handler for an already-bound job", async () => {
+    const cron = createCron({ app: "billing", baseUrl: "https://billing.example.com", secret: SECRET });
+    cron.register({ name: "ping", schedule: "@hourly", handler: () => ({ ok: true, body: "first" }) });
+    cron.on("ping", () => ({ ok: true, body: "second" }));
+
+    const path = "/api/v1/scheduled/ping";
+    const { header } = await sign({ secret: SECRET, method: "POST", path, body: enc(""), timestamp: NOW });
+    const req = new Request(`https://billing.example.com${path}`, {
+      method: "POST",
+      headers: { [HeaderSignature]: header },
+    });
+    const r = await cron.verifyTrigger(req, { now: NOW });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const out = await r.run();
+    expect(out.body).toBe("second");
+  });
+});
+
+describe("JobContext shape (simplified)", () => {
+  it("exposes ctx.headers and ctx.meta nesting", async () => {
+    const cron = createCron({ app: "x", baseUrl: "https://x.example.com", secret: SECRET });
+    let observedHeaders: Record<string, string> | null = null;
+    let observedMetaKeys: string[] = [];
+    let observedLegacy: Date | null = null;
+    cron.register({
+      name: "j",
+      schedule: "@hourly",
+      handler: (ctx) => {
+        observedHeaders = ctx.headers;
+        observedMetaKeys = Object.keys(ctx.meta);
+        observedLegacy = ctx.fireTime;
+        return { ok: true };
+      },
+    });
+    const path = "/api/v1/scheduled/j";
+    const { header } = await sign({ secret: SECRET, method: "POST", path, body: enc(""), timestamp: NOW });
+    const req = new Request(`https://x.example.com${path}`, {
+      method: "POST",
+      headers: {
+        [HeaderSignature]: header,
+        "x-cron-fire-time": String(NOW),
+        "x-custom-app-header": "yes",
+      },
+    });
+    const r = await cron.verifyTrigger(req, { now: NOW });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    await r.run();
+    expect(observedHeaders).not.toBeNull();
+    expect(observedHeaders?.["x-custom-app-header"]).toBe("yes");
+    expect(observedMetaKeys.sort()).toEqual(["fireTime", "fireTimeActual", "previousSuccessTime"]);
+    expect(observedLegacy).toEqual(new Date(NOW * 1000));
+    expect(r.ctx.fireTime).toEqual(r.ctx.meta.fireTime);
   });
 });
