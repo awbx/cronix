@@ -310,3 +310,23 @@ or by the trigger shim, prefer the shim. The host scheduler's job is *when to
 fire*. The shim's job is *everything that happens at and after the fire*.
 Rationale: Synthesis-first keeps backend adapters thin and behavior uniform
 across crontab, systemd, and Kubernetes.
+
+---
+
+## D-029: Polyglot monorepo layout
+Date: 2026-05-04
+Status: Locked
+
+Decision: The repo uses a polyglot top-level: `spec/` (language-neutral),
+`ts/` (TypeScript pnpm workspace), `go/` (Go module). Future SDKs in other
+languages each get their own top-level directory (`py/`, `rb/`, …). The Go
+module path is `github.com/awbx/cronix/go` (not `github.com/awbx/cronix`).
+Rationale: Symmetry across languages. The original `PLAN.md` §6 placed the
+Go module at the repo root for goreleaser/`go install` ergonomics, but that
+asymmetry worsens as more languages join. The slightly longer install path
+(`go install github.com/awbx/cronix/go/cmd/cronix@latest`) is an acceptable
+cost.
+Alternatives considered: Go at repo root with TypeScript under `packages/`
+(original plan); both languages under a single `src/` tree (rejected —
+fights both ecosystems' tooling defaults); Bazel/Pants (rejected — overkill
+for v1).

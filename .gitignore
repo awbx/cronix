@@ -9,16 +9,15 @@ dist/
 .env.local
 
 # Go
-/cronix
-/cronix-*
+go/cronix
+go/cronix-*
 *.exe
 *.test
 *.out
 coverage.txt
-dist/
 
 # goreleaser
-dist-go/
+/dist/
 
 # IDE
 .vscode-test

@@ -90,5 +90,10 @@
     "express": ">=4",
     "fastify": ">=4",
     "hono": ">=4"
+  },
+  "dependencies": {
+    "cron-parser": "^5.5.0",
+    "zod": "^4.4.3",
+    "zod-to-json-schema": "^3.25.2"
   }
 }

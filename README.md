@@ -12,6 +12,20 @@ Today the schedule for a job lives somewhere different from the code that handle
 
 The protocol is the product. The reconciler and SDK are reference implementations.
 
+## Repo layout (polyglot monorepo)
+
+```
+cronix/
+├── spec/         # language-neutral: RFC, DECISIONS, JSON Schema, conformance vectors
+├── ts/           # TypeScript workspace (pnpm) — @cronix/sdk + framework adapters + examples
+├── go/           # Go module (github.com/awbx/cronix/go) — cmd/cronix binary + internal/ + pkg/cronsdk
+├── deploy/       # Dockerfile, Helm chart — language-neutral
+├── .github/      # CI workflows
+└── PLAN.md       # Implementation plan
+```
+
+Future SDKs (Python, Ruby, …) get their own top-level directory. The `spec/` directory is the source of truth for cross-language correctness — every SDK passes the same `manifest-vectors.json` and `auth-vectors.json`.
+
 ## Architecture
 
 ```
@@ -40,32 +54,34 @@ The protocol is the product. The reconciler and SDK are reference implementation
 
 ## Status
 
-Pre-alpha. The implementation phases that build out v1 are tracked in [PLAN.md](./PLAN.md). The authoritative on-the-wire spec lives in [packages/spec/RFC.md](./packages/spec/RFC.md).
-
-## Repo layout
-
-- `packages/spec/` — RFC, decisions, JSON Schema, conformance vectors (language-neutral)
-- `packages/sdk/` — `@cronix/sdk` for TypeScript apps
-- `cmd/cronix/` — single Go binary entrypoint
-- `internal/` — Go internals (parsing, auth, backends, locks, trigger, reconciler)
-- `pkg/cronsdk/` — public Go SDK (signature verification only)
-- `examples/` — runnable examples per framework
-- `deploy/` — Dockerfile and Helm chart
+Pre-alpha. The implementation phases that build out v1 are tracked in [PLAN.md](./PLAN.md). The authoritative on-the-wire spec lives in [spec/RFC.md](./spec/RFC.md).
 
 ## Build
 
 ```bash
 # TypeScript
+cd ts
 pnpm install
 pnpm build && pnpm test && pnpm lint && pnpm typecheck
 
 # Go
+cd go
 go build ./...
 go test ./...
 go vet ./...
 
-# Multi-platform binaries (snapshot — no release)
+# Multi-platform binaries (snapshot — no release) from repo root
 goreleaser build --snapshot --clean
+```
+
+## Install (pre-release)
+
+```bash
+# Go binary
+go install github.com/awbx/cronix/go/cmd/cronix@latest
+
+# TypeScript SDK (once published — Phase 7)
+pnpm add @cronix/sdk
 ```
 
 ## License

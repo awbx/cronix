@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/awbx/cronix/internal/cli/commands"
+	"github.com/awbx/cronix/go/internal/cli/commands"
 )
 
 func main() {
