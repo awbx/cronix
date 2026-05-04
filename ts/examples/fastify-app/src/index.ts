@@ -1,5 +1,5 @@
-import { createCron } from "@awbx/cronix-sdk";
-import { mount } from "@awbx/cronix-sdk/fastify";
+import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
+import { handle, rawBody } from "@awbx/cronix-sdk/fastify";
 import Fastify from "fastify";
 
 type CronEnv = {
@@ -25,7 +25,15 @@ cron.register({
 });
 
 const app = Fastify({ logger: true });
-mount(app, cron, { vars: () => ({ traceId: crypto.randomUUID() }) });
+rawBody(app);
+app.all(
+  MANIFEST_PATH,
+  handle((req) => cron.handle(req)),
+);
+app.all(
+  `${TRIGGER_PATH_PREFIX}:name`,
+  handle((req) => cron.handle(req, { vars: { traceId: crypto.randomUUID() } })),
+);
 
 const port = Number(process.env.PORT ?? 3000);
 app.listen({ port, host: "0.0.0.0" }).catch((err) => {
