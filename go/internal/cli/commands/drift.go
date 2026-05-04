@@ -10,9 +10,7 @@ func newDriftCmd() *cobra.Command {
 	var (
 		manifestSource string
 		secretRefs     []string
-		backendName    string
-		crontabPath    string
-		triggerBin     string
+		bopts          backendOpts
 		output         string
 		exitOnDrift    bool
 	)
@@ -31,7 +29,8 @@ of truth.`,
 			if err != nil {
 				return err
 			}
-			b, err := buildBackend(backendName, crontabPath, triggerBin)
+			bopts.secretRefs = secretRefs
+			b, err := buildBackend(bopts)
 			if err != nil {
 				return err
 			}
@@ -51,9 +50,7 @@ of truth.`,
 	cmd.Flags().StringVar(&manifestSource, "manifest", "", "manifest source — required")
 	_ = cmd.MarkFlagRequired("manifest")
 	cmd.Flags().StringSliceVar(&secretRefs, "secret-ref", nil, "secret_ref for HTTPS manifest fetches")
-	cmd.Flags().StringVar(&backendName, "backend", "crontab", "host scheduler backend (crontab|systemd-timer|kubernetes)")
-	cmd.Flags().StringVar(&crontabPath, "crontab-path", "/etc/crontab", "crontab file")
-	cmd.Flags().StringVar(&triggerBin, "trigger-bin", "/usr/local/bin/cronix", "absolute path to the cronix binary on the host")
+	bindBackendFlags(cmd, &bopts)
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output format: table|json")
 	cmd.Flags().BoolVar(&exitOnDrift, "exit-on-drift", false, "exit 5 when drift is detected")
 	return cmd

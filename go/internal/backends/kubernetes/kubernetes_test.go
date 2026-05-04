@@ -1,8 +1,17 @@
 package kubernetes
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 
 	"github.com/awbx/cronix/go/internal/manifest"
 )
@@ -22,6 +31,21 @@ func sampleJob(name string, schedules ...string) manifest.NormalizedJob {
 		},
 		Auth: manifest.NormalizedAuth{SecretRefs: []string{"env:S"}},
 	}
+}
+
+func newTestBackend(t *testing.T) (*Backend, *fake.Clientset) {
+	t.Helper()
+	client := fake.NewClientset()
+	b, err := New(Options{
+		Image:      "ghcr.io/awbx/cronix:test",
+		Namespace:  "billing",
+		SecretRefs: []string{"env:CRON_SECRET"},
+		Client:     client,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	return b, client
 }
 
 func TestRenderManifest(t *testing.T) {
@@ -58,10 +82,7 @@ func TestRenderRejectsUnknownShortcut(t *testing.T) {
 }
 
 func TestValidateRejectsLongName(t *testing.T) {
-	b, err := New(Options{Image: "img"})
-	if err != nil {
-		t.Fatalf("new: %v", err)
-	}
+	b, _ := newTestBackend(t)
 	long := strings.Repeat("a", 60)
 	res := b.Validate(sampleJob(long, "@hourly"))
 	if res.OK {
@@ -70,10 +91,7 @@ func TestValidateRejectsLongName(t *testing.T) {
 }
 
 func TestValidateAcceptsCommonSchedules(t *testing.T) {
-	b, err := New(Options{Image: "img"})
-	if err != nil {
-		t.Fatalf("new: %v", err)
-	}
+	b, _ := newTestBackend(t)
 	for _, s := range []string{"@hourly", "0 0 * * *", "*/15 * * * *"} {
 		res := b.Validate(sampleJob("ok", s))
 		if !res.OK {
@@ -81,3 +99,149 @@ func TestValidateAcceptsCommonSchedules(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateInstallsCronJobAndConfigMap(t *testing.T) {
+	b, client := newTestBackend(t)
+	job := sampleJob("reconcile", "@hourly", "*/15 * * * *")
+	if err := b.Create(context.Background(), "billing", job); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	cjs, err := client.BatchV1().CronJobs("billing").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("list cronjobs: %v", err)
+	}
+	if len(cjs.Items) != 2 {
+		t.Fatalf("expected 2 CronJobs (one per schedule), got %d", len(cjs.Items))
+	}
+	cms, err := client.CoreV1().ConfigMaps("billing").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("list configmaps: %v", err)
+	}
+	if len(cms.Items) != 2 {
+		t.Fatalf("expected 2 ConfigMaps, got %d", len(cms.Items))
+	}
+	for _, cj := range cjs.Items {
+		for _, want := range []string{LabelManaged, LabelApp, LabelJob, LabelHash, LabelIndex} {
+			if _, ok := cj.Labels[want]; !ok {
+				t.Errorf("CronJob %s missing label %s", cj.Name, want)
+			}
+		}
+		if cj.Labels[LabelApp] != "billing" || cj.Labels[LabelJob] != "reconcile" {
+			t.Errorf("CronJob %s wrong app/job labels: %v", cj.Name, cj.Labels)
+		}
+		if cj.Spec.Schedule == "" {
+			t.Errorf("CronJob %s missing schedule", cj.Name)
+		}
+		if cj.Labels[LabelIndex] == "0" && cj.Spec.Schedule != "0 * * * *" {
+			t.Errorf("CronJob %s expected schedule '0 * * * *', got %q", cj.Name, cj.Spec.Schedule)
+		}
+	}
+	for _, cm := range cms.Items {
+		key := "billing.reconcile.json"
+		if _, ok := cm.Data[key]; !ok {
+			t.Errorf("ConfigMap %s missing data key %s", cm.Name, key)
+		}
+		if !strings.Contains(cm.Data[key], `"app": "billing"`) {
+			t.Errorf("ConfigMap %s spec missing app field: %s", cm.Name, cm.Data[key])
+		}
+	}
+}
+
+func TestListReturnsOnlyOwnedEntries(t *testing.T) {
+	b, client := newTestBackend(t)
+	if err := b.Create(context.Background(), "billing", sampleJob("reconcile", "@hourly")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// Inject an unmanaged CronJob — List must skip it.
+	unmanaged := &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{Name: "user-managed-cronjob", Namespace: "billing"},
+		Spec:       batchv1.CronJobSpec{Schedule: "0 0 * * *"},
+	}
+	if _, err := client.BatchV1().CronJobs("billing").Create(context.Background(), unmanaged, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("inject: %v", err)
+	}
+	entries, err := b.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 owned entry, got %d", len(entries))
+	}
+	if entries[0].App != "billing" || entries[0].Job != "reconcile" {
+		t.Errorf("unexpected entry: %+v", entries[0])
+	}
+	if entries[0].Hash == "" {
+		t.Errorf("hash label missing")
+	}
+}
+
+func TestUpdateReplacesEntries(t *testing.T) {
+	b, client := newTestBackend(t)
+	first := sampleJob("reconcile", "@hourly")
+	if err := b.Create(context.Background(), "billing", first); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	originalEntries, _ := b.List(context.Background())
+	originalHash := originalEntries[0].Hash
+
+	updated := sampleJob("reconcile", "@daily")
+	if err := b.Update(context.Background(), "billing", updated); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	entries, _ := b.List(context.Background())
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry after update, got %d", len(entries))
+	}
+	if entries[0].Hash == originalHash {
+		t.Errorf("expected hash to change after update")
+	}
+	cjs, _ := client.BatchV1().CronJobs("billing").List(context.Background(), metav1.ListOptions{})
+	for _, cj := range cjs.Items {
+		if !strings.HasPrefix(cj.Name, "cronix-") {
+			continue
+		}
+		if cj.Spec.Schedule != "0 0 * * *" {
+			t.Errorf("expected schedule '0 0 * * *' after @daily update, got %q", cj.Spec.Schedule)
+		}
+	}
+}
+
+func TestDeleteRemovesAllOwnedResources(t *testing.T) {
+	b, client := newTestBackend(t)
+	if err := b.Create(context.Background(), "billing", sampleJob("reconcile", "@hourly", "*/15 * * * *")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := b.Delete(context.Background(), "billing", "reconcile"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	// The fake clientset's DeleteCollection deletes immediately — no foreground GC simulation needed.
+	cjs, _ := client.BatchV1().CronJobs("billing").List(context.Background(), metav1.ListOptions{LabelSelector: LabelManaged + "=true"})
+	if len(cjs.Items) != 0 {
+		t.Errorf("expected 0 owned CronJobs after delete, got %d", len(cjs.Items))
+	}
+	cms, _ := client.CoreV1().ConfigMaps("billing").List(context.Background(), metav1.ListOptions{LabelSelector: LabelManaged + "=true"})
+	if len(cms.Items) != 0 {
+		t.Errorf("expected 0 owned ConfigMaps after delete, got %d", len(cms.Items))
+	}
+}
+
+func TestEnsureSucceedsAgainstFakeAPIServer(t *testing.T) {
+	b, _ := newTestBackend(t)
+	if err := b.Ensure(context.Background()); err != nil {
+		t.Errorf("expected Ensure to succeed against fake API server, got %v", err)
+	}
+}
+
+func TestEnsureFailsWhenAPIErrors(t *testing.T) {
+	client := fake.NewClientset()
+	client.Fake.PrependReactor("get", "*", func(_ clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewServiceUnavailable("synthetic")
+	})
+	b, _ := New(Options{Image: "x", Client: client})
+	if err := b.Ensure(context.Background()); err == nil {
+		t.Errorf("expected Ensure to fail when API server is unreachable")
+	}
+}
+
+// silence unused import linters when corev1 isn't referenced from non-test code paths
+var _ = corev1.ConfigMap{}
