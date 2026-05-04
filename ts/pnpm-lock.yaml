@@ -29,6 +29,11 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
+  examples/hand-rolled: {}
 
   packages/sdk:
     dependencies:

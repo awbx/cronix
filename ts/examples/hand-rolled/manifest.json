@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "app": "billing-service",
+  "jobs": [
+    {
+      "name": "reconcile-payments",
+      "schedule": "*/15 * * * *",
+      "request": {
+        "url": "https://billing.internal/api/v1/scheduled/reconcile-payments"
+      },
+      "policy": {
+        "concurrency": "Forbid",
+        "timeout_seconds": 120,
+        "retries": { "max_attempts": 5, "min_seconds": 2, "max_seconds": 30 }
+      },
+      "auth": {
+        "secret_refs": ["BILLING_CRON_V2", "BILLING_CRON_V1"]
+      }
+    },
+    {
+      "name": "settle-invoices",
+      "schedules": ["0 2 * * *", "0 14 * * 1-5"],
+      "timezone": "Europe/Paris",
+      "request": {
+        "url": "https://billing.internal/api/v1/scheduled/settle-invoices",
+        "headers": { "Accept": "application/json" }
+      },
+      "auth": { "secret_refs": ["BILLING_CRON_V2"] }
+    }
+  ]
+}
