@@ -34,6 +34,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -46,6 +47,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/awbx/cronix/go/internal/backends"
+	"github.com/awbx/cronix/go/internal/backends/historyutil"
 	"github.com/awbx/cronix/go/internal/manifest"
 	"github.com/awbx/cronix/go/internal/trigger"
 )
@@ -258,9 +260,57 @@ func (*Backend) Validate(job manifest.NormalizedJob) backends.ValidationResult {
 	return backends.ValidationResult{OK: len(issues) == 0, Issues: issues}
 }
 
-// History reads K8s Events + Pod logs. Phase 6 — returns nil for now.
-func (*Backend) History(_ context.Context, _ backends.HistoryOpts) ([]backends.HistoryEntry, error) {
-	return nil, nil
+// History reads Pod logs for Jobs owned by the (App, Job) CronJobs.
+// The trigger shim emits one slog-JSON line per attempt; History folds
+// per-attempt records into one HistoryEntry per terminal run.
+//
+// Jobs and Pods are matched by the same `cronix.dev/managed=true,
+// cronix.dev/app=<app>,cronix.dev/job=<job>` label set the CronJobs
+// already carry — Job.spec.template.metadata.labels propagates these
+// down so the selector covers Pods directly.
+func (b *Backend) History(ctx context.Context, opts backends.HistoryOpts) ([]backends.HistoryEntry, error) {
+	if opts.App == "" || opts.Job == "" {
+		return nil, fmt.Errorf("kubernetes: history requires App + Job")
+	}
+	sel := fmt.Sprintf("%s=true,%s=%s,%s=%s", LabelManaged, LabelApp, opts.App, LabelJob, opts.Job)
+	pods, err := b.client.CoreV1().Pods(b.namespace).List(ctx, metav1.ListOptions{LabelSelector: sel})
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes: list pods: %w", err)
+	}
+	all := make([]byte, 0, 4096)
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		created := pod.CreationTimestamp.Time
+		if !opts.Since.IsZero() && created.Before(opts.Since) {
+			continue
+		}
+		if !opts.Until.IsZero() && created.After(opts.Until) {
+			continue
+		}
+		raw, err := b.fetchPodLogs(ctx, pod.Name)
+		if err != nil {
+			continue
+		}
+		all = append(all, raw...)
+		if len(raw) > 0 && raw[len(raw)-1] != '\n' {
+			all = append(all, '\n')
+		}
+	}
+	out := historyutil.FoldShimLogs(all, opts.App, opts.Job, "k8s-pod-log", opts.Status)
+	if opts.Limit > 0 && len(out) > opts.Limit {
+		out = out[len(out)-opts.Limit:]
+	}
+	return out, nil
+}
+
+func (b *Backend) fetchPodLogs(ctx context.Context, podName string) ([]byte, error) {
+	req := b.client.CoreV1().Pods(b.namespace).GetLogs(podName, &corev1.PodLogOptions{})
+	stream, err := req.Stream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+	return io.ReadAll(stream)
 }
 
 // Ensure verifies the API server is reachable.
