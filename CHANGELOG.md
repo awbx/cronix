@@ -1,6 +1,16 @@
 # Changelog
 
-All notable changes to cronix are documented here. Generated from `git log`; see ts/scripts/generate-changelog.mjs.
+All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
+
+## [0.7.1] - 2026-05-05
+
+### Refactors
+
+- refactor(release): move bump-version + changelog tooling to repo root scripts/ (`f82bb5a`)
+
+### Other
+
+- ci(release): authenticate GHCR push with GHCR_PAT (`ec0675f`)
 
 ## [0.7.0] - 2026-05-05
 

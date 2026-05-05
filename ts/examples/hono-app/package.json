@@ -1,6 +1,6 @@
 {
   "name": "@cronix-example/hono-app",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Wiring @awbx/cronix-sdk into Hono — runs unchanged on Node, Bun, and Cloudflare Workers.",
   "type": "module",
