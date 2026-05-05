@@ -1,0 +1,14 @@
+[Unit]
+Description=cronix: {{.App}}.{{.Job}} (idx={{.Index}})
+After=network-online.target
+X-Cronix-App={{.App}}
+X-Cronix-Job={{.Job}}
+X-Cronix-Index={{.Index}}
+{{- if .Hash}}
+X-Cronix-Hash={{.Hash}}
+{{- end}}
+
+[Service]
+Type=oneshot
+ExecStart={{.TriggerBin}} trigger {{.App}}.{{.Job}}
+RuntimeMaxSec={{.RuntimeMaxSec}}

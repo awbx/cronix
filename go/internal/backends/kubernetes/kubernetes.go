@@ -49,6 +49,7 @@ import (
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/backends/historyutil"
 	"github.com/awbx/cronix/go/internal/manifest"
+	"github.com/awbx/cronix/go/internal/policy"
 	"github.com/awbx/cronix/go/internal/trigger"
 )
 
@@ -237,9 +238,9 @@ func computeListHash(cj *batchv1.CronJob, cm *corev1.ConfigMap, idx int) string 
 		return cj.Labels[LabelHash]
 	}
 	if cj.Spec.Schedule != wantSched {
-		return "drift-spec-edited"
+		return policy.DriftSpecEdited
 	}
-	return hashJobSchedule(spec.Job, idx)
+	return policy.Hash(spec.Job, idx)
 }
 
 // configMapSpecJSON returns the trigger spec JSON from a cronix-owned
@@ -407,8 +408,8 @@ func (b *Backend) buildResources(app string, job manifest.NormalizedJob, idx int
 	if err != nil {
 		return nil, nil, fmt.Errorf("kubernetes: marshal spec: %w", err)
 	}
-	hash := hashJobSchedule(job, idx)
-	name := fmt.Sprintf("cronix-%s-%s-%d", app, job.Name, idx)
+	hash := policy.Hash(job, idx)
+	name := policy.ScheduleName(app, job.Name, idx)
 	specName := name + "-spec"
 	labels := map[string]string{
 		LabelManaged: "true",
@@ -494,7 +495,7 @@ func RenderManifest(image, namespace, app string, job manifest.NormalizedJob, id
 	if err != nil {
 		return "", err
 	}
-	name := fmt.Sprintf("cronix-%s-%s-%d", app, job.Name, idx)
+	name := policy.ScheduleName(app, job.Name, idx)
 	specName := name + "-spec"
 	tz := job.Timezone
 	if tz == "" {
@@ -619,29 +620,6 @@ func indent(s string, n int) string {
 		lines[i] = pad + l
 	}
 	return strings.Join(lines, "\n")
-}
-
-// hashJobSchedule produces the same 16-char change-detection hash the
-// reconciler uses (FNV-1a over the canonicalized manifest, salted by
-// schedule index). Match expected by reconcile.computeDesiredHashes.
-func hashJobSchedule(job manifest.NormalizedJob, idx int) string {
-	b, _ := manifest.Canonicalize(&manifest.NormalizedManifest{
-		Version: 1,
-		App:     "_hash_",
-		Jobs:    []manifest.NormalizedJob{job},
-	})
-	const (
-		offset64 = uint64(1469598103934665603)
-		prime64  = uint64(1099511628211)
-	)
-	h := offset64
-	for _, x := range b {
-		h ^= uint64(x)
-		h *= prime64
-	}
-	h ^= uint64(idx)
-	h *= prime64
-	return fmt.Sprintf("%016x", h)
 }
 
 var _ backends.Backend = (*Backend)(nil)

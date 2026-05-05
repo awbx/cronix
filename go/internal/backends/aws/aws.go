@@ -54,6 +54,7 @@ import (
 
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/manifest"
+	"github.com/awbx/cronix/go/internal/policy"
 	"github.com/awbx/cronix/go/internal/trigger"
 )
 
@@ -164,7 +165,7 @@ func (b *Backend) List(ctx context.Context) ([]backends.ManagedEntry, error) {
 	for {
 		resp, err := b.scheduler.ListSchedules(ctx, &scheduler.ListSchedulesInput{
 			GroupName:  awssdk.String(b.scheduleGroup),
-			NamePrefix: awssdk.String("cronix-"),
+			NamePrefix: awssdk.String(policy.SchedulePrefix),
 			NextToken:  next,
 		})
 		if err != nil {
@@ -234,8 +235,8 @@ func (b *Backend) Create(ctx context.Context, app string, job manifest.Normalize
 		if err != nil {
 			return err
 		}
-		hash := hashJobSchedule(job, i)
-		name := scheduleName(app, job.Name, i)
+		hash := policy.Hash(job, i)
+		name := policy.ScheduleName(app, job.Name, i)
 		payload, err := b.buildTargetInput(app, job, i)
 		if err != nil {
 			return fmt.Errorf("aws: build target input for %s: %w", name, err)
@@ -280,7 +281,7 @@ func (b *Backend) Delete(ctx context.Context, app, jobName string) error {
 		if e.App != app || e.Job != jobName {
 			continue
 		}
-		name := scheduleName(app, jobName, e.Index)
+		name := policy.ScheduleName(app, jobName, e.Index)
 		if _, err := b.scheduler.DeleteSchedule(ctx, &scheduler.DeleteScheduleInput{
 			Name:      awssdk.String(name),
 			GroupName: awssdk.String(b.scheduleGroup),
@@ -299,7 +300,7 @@ func (*Backend) Validate(job manifest.NormalizedJob) backends.ValidationResult {
 			issues = append(issues, fmt.Sprintf("schedules[%d]: %v", i, err))
 		}
 	}
-	if n := len(scheduleName("dummyapp", job.Name, 0)); n > 64 {
+	if n := len(policy.ScheduleName("dummyapp", job.Name, 0)); n > 64 {
 		issues = append(issues, fmt.Sprintf("schedule name would exceed AWS 64-char limit (got %d)", n))
 	}
 	return backends.ValidationResult{OK: len(issues) == 0, Issues: issues}
@@ -318,10 +319,6 @@ func (b *Backend) Ensure(ctx context.Context) error {
 		return fmt.Errorf("aws: sts:GetCallerIdentity: %w", err)
 	}
 	return nil
-}
-
-func scheduleName(app, job string, idx int) string {
-	return fmt.Sprintf("cronix-%s-%s-%d", app, job, idx)
 }
 
 // buildTargetInput is the JSON payload EventBridge passes to the
@@ -403,28 +400,6 @@ func translateAWSCron(s string) (string, error) {
 		dow = "?"
 	}
 	return fmt.Sprintf("cron(%s %s %s %s %s *)", min, hr, dom, mon, dow), nil
-}
-
-// hashJobSchedule mirrors the algorithm used by other backends so the
-// reconciler's plan/drift comparison stays backend-agnostic.
-func hashJobSchedule(job manifest.NormalizedJob, idx int) string {
-	b, _ := manifest.Canonicalize(&manifest.NormalizedManifest{
-		Version: 1,
-		App:     "_hash_",
-		Jobs:    []manifest.NormalizedJob{job},
-	})
-	const (
-		offset64 = uint64(1469598103934665603)
-		prime64  = uint64(1099511628211)
-	)
-	h := offset64
-	for _, x := range b {
-		h ^= uint64(x)
-		h *= prime64
-	}
-	h ^= uint64(idx)
-	h *= prime64
-	return fmt.Sprintf("%016x", h)
 }
 
 var _ backends.Backend = (*Backend)(nil)

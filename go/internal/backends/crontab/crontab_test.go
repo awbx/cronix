@@ -11,6 +11,7 @@ import (
 
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/manifest"
+	"github.com/awbx/cronix/go/internal/policy"
 )
 
 func newBackend(t *testing.T, initial string) *Backend {
@@ -170,8 +171,8 @@ func TestMultiScheduleJobProducesMultipleBlocks(t *testing.T) {
 func TestHashChangesWithSchedule(t *testing.T) {
 	a := sampleJob("ping", "@hourly")
 	b := sampleJob("ping", "@daily")
-	hashA := hashJobSchedule(a, 0)
-	hashB := hashJobSchedule(b, 0)
+	hashA := policy.Hash(a, 0)
+	hashB := policy.Hash(b, 0)
 	if hashA == hashB {
 		t.Errorf("expected different hashes for different schedules, got %q", hashA)
 	}
@@ -179,8 +180,8 @@ func TestHashChangesWithSchedule(t *testing.T) {
 
 func TestHashStableForSameInput(t *testing.T) {
 	a := sampleJob("ping", "@hourly")
-	first := hashJobSchedule(a, 0)
-	second := hashJobSchedule(a, 0)
+	first := policy.Hash(a, 0)
+	second := policy.Hash(a, 0)
 	if first != second {
 		t.Errorf("hash not deterministic: %q vs %q", first, second)
 	}
@@ -188,7 +189,7 @@ func TestHashStableForSameInput(t *testing.T) {
 
 func TestHashDistinctPerScheduleIndex(t *testing.T) {
 	job := sampleJob("watchdog", "@hourly", "@daily")
-	if hashJobSchedule(job, 0) == hashJobSchedule(job, 1) {
+	if policy.Hash(job, 0) == policy.Hash(job, 1) {
 		t.Errorf("expected distinct hashes per index")
 	}
 }
