@@ -8,33 +8,30 @@
 // The reconciler reads the crontab, finds owned blocks, computes a diff,
 // and writes the file atomically. Lines without a cronix ownership marker
 // are preserved untouched (D-026).
+//
+// File layout:
+//
+//	policy.go    backend-local conventions (DefaultPath, ownerMarker)
+//	parse.go     ownership regex + line parser + stripOwnedFor
+//	cron.go      schedule expression → 5-field cron translator
+//	render.go    produces the 2-line blocks
+//	client.go    JournalctlExecutor + file I/O (read/atomicWrite)
+//	backend.go   Backend type + Options + Backend interface methods
 package crontab
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/gofrs/flock"
 
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/backends/historyutil"
 	"github.com/awbx/cronix/go/internal/manifest"
-	"github.com/awbx/cronix/go/internal/policy"
 )
-
-// JournalctlExecutor runs `journalctl` and returns its raw output. Used
-// by History; injectable so tests can feed canned journal records.
-type JournalctlExecutor interface {
-	Run(ctx context.Context, args ...string) ([]byte, error)
-}
 
 // Backend reads and writes a single crontab file.
 type Backend struct {
@@ -46,12 +43,12 @@ type Backend struct {
 
 // Options for constructing a Backend.
 type Options struct {
-	// Path is the crontab file. Defaults to /etc/crontab.
+	// Path is the crontab file. Defaults to DefaultPath.
 	Path string
 	// TriggerBin is the absolute path to the cronix binary. Required.
 	TriggerBin string
 	// LockPath is the file used as the apply-time write mutex. Defaults
-	// to <Path>.cronix.lock.
+	// to <Path><lockSuffix>.
 	LockPath string
 	// Journalctl runs journalctl invocations for History. Defaults to
 	// os/exec; History returns nil silently when journalctl is missing
@@ -62,13 +59,13 @@ type Options struct {
 // New constructs a Backend.
 func New(opts Options) (*Backend, error) {
 	if opts.Path == "" {
-		opts.Path = "/etc/crontab"
+		opts.Path = DefaultPath
 	}
 	if opts.TriggerBin == "" {
 		return nil, fmt.Errorf("crontab: TriggerBin is required")
 	}
 	if opts.LockPath == "" {
-		opts.LockPath = opts.Path + ".cronix.lock"
+		opts.LockPath = opts.Path + lockSuffix
 	}
 	jx := opts.Journalctl
 	if jx == nil {
@@ -79,15 +76,6 @@ func New(opts Options) (*Backend, error) {
 
 // Name returns "crontab".
 func (*Backend) Name() string { return "crontab" }
-
-var (
-	appRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
-	jobRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
-	// ownerLineRe matches a cronix ownership comment line.
-	ownerLineRe = regexp.MustCompile(
-		`^# cronix:owned app=(?P<app>[a-z][a-z0-9-]{0,62}) job=(?P<job>[a-z][a-z0-9-]{0,62}) hash=(?P<hash>[0-9a-f]{1,64}) idx=(?P<idx>\d+)$`,
-	)
-)
 
 // List enumerates owned entries.
 func (b *Backend) List(_ context.Context) ([]backends.ManagedEntry, error) {
@@ -179,7 +167,7 @@ func (b *Backend) History(ctx context.Context, opts backends.HistoryOpts) ([]bac
 	args := []string{
 		"--output=json",
 		"--no-pager",
-		"_COMM=cronix",
+		historySyslogIdentifier,
 	}
 	if !opts.Since.IsZero() {
 		args = append(args, "--since", opts.Since.UTC().Format("2006-01-02 15:04:05"))
@@ -201,18 +189,6 @@ func (b *Backend) History(ctx context.Context, opts backends.HistoryOpts) ([]bac
 	return entries, nil
 }
 
-// defaultJournalctl shells out to the system `journalctl` binary.
-type defaultJournalctl struct{}
-
-func (defaultJournalctl) Run(ctx context.Context, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "journalctl", args...) //#nosec G204 — args are constructed internally
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("journalctl %s: %w", strings.Join(args, " "), err)
-	}
-	return out, nil
-}
-
 // Ensure verifies the crontab file exists and is writable.
 func (b *Backend) Ensure(_ context.Context) error {
 	dir := filepath.Dir(b.path)
@@ -224,47 +200,6 @@ func (b *Backend) Ensure(_ context.Context) error {
 		return fmt.Errorf("crontab: open %s: %w", b.path, err)
 	}
 	return f.Close()
-}
-
-// readFile reads the crontab. Missing file is not an error — we report
-// an empty crontab.
-func (b *Backend) readFile() ([]rawEntry, []string, error) {
-	f, err := os.Open(b.path) //#nosec G304 — operator-managed
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil, nil
-		}
-		return nil, nil, fmt.Errorf("crontab: open %s: %w", b.path, err)
-	}
-	defer f.Close()
-	return parseLines(f)
-}
-
-type rawEntry struct {
-	scheduleLine string
-	ownerLine    string
-}
-
-func parseLines(r io.Reader) ([]rawEntry, []string, error) {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	var (
-		all     []string
-		entries []rawEntry
-		prev    string
-	)
-	for scanner.Scan() {
-		line := scanner.Text()
-		all = append(all, line)
-		if ownerLineRe.MatchString(line) && prev != "" && !strings.HasPrefix(prev, "#") {
-			entries = append(entries, rawEntry{scheduleLine: prev, ownerLine: line})
-		}
-		prev = line
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, nil, err
-	}
-	return entries, all, nil
 }
 
 // rewrite acquires the apply-lock, applies fn, writes atomically.
@@ -281,124 +216,6 @@ func (b *Backend) rewrite(fn func([]string) []string) error {
 	}
 	updated := fn(lines)
 	return atomicWrite(b.path, updated)
-}
-
-// stripOwnedFor returns lines minus any 2-line owned block for (app, job).
-func stripOwnedFor(lines []string, app, job string) []string {
-	out := make([]string, 0, len(lines))
-	for i := range lines {
-		m := ownerLineRe.FindStringSubmatch(lines[i])
-		if m != nil && m[1] == app && m[2] == job {
-			// Drop the schedule line that immediately precedes this marker.
-			if len(out) > 0 {
-				out = out[:len(out)-1]
-			}
-			continue
-		}
-		out = append(out, lines[i])
-	}
-	return out
-}
-
-// render produces the 2-line blocks for every schedule of `job`.
-func render(app, triggerBin string, job manifest.NormalizedJob) []string {
-	out := make([]string, 0, 2*len(job.Schedules))
-	for i, sched := range job.Schedules {
-		cron, ok := translate(sched)
-		if !ok {
-			// Validate() would have caught this; defensive skip to avoid
-			// emitting a malformed crontab line.
-			continue
-		}
-		hash := policy.Hash(job, i)
-		out = append(out,
-			fmt.Sprintf("%s %s trigger %s.%s", cron, triggerBin, app, job.Name),
-			fmt.Sprintf("# cronix:owned app=%s job=%s hash=%s idx=%d", app, job.Name, hash, i),
-		)
-	}
-	return out
-}
-
-func atomicWrite(path string, lines []string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".cronix-crontab-*")
-	if err != nil {
-		return err
-	}
-	cleanup := func() {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-	}
-	w := bufio.NewWriter(tmp)
-	for _, line := range lines {
-		if _, err := w.WriteString(line); err != nil {
-			cleanup()
-			return err
-		}
-		if _, err := w.WriteString("\n"); err != nil {
-			cleanup()
-			return err
-		}
-	}
-	if err := w.Flush(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmp.Name())
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
-}
-
-// translate maps a manifest schedule to the 5-field cron form.
-func translate(s string) (string, bool) {
-	t := strings.TrimSpace(s)
-	switch t {
-	case "@hourly":
-		return "0 * * * *", true
-	case "@daily", "@midnight":
-		return "0 0 * * *", true
-	case "@weekly":
-		return "0 0 * * 0", true
-	case "@monthly":
-		return "0 0 1 * *", true
-	case "@yearly", "@annually":
-		return "0 0 1 1 *", true
-	}
-	if rest, ok := strings.CutPrefix(t, "@every"); ok {
-		rest = strings.TrimSpace(rest)
-		if len(rest) < 2 {
-			return "", false
-		}
-		unit := rest[len(rest)-1]
-		num, err := strconv.Atoi(rest[:len(rest)-1])
-		if err != nil || num <= 0 {
-			return "", false
-		}
-		switch unit {
-		case 'm':
-			if num < 60 && 60%num == 0 {
-				return fmt.Sprintf("*/%d * * * *", num), true
-			}
-		case 'h':
-			if num < 24 && 24%num == 0 {
-				return fmt.Sprintf("0 */%d * * *", num), true
-			}
-		}
-		return "", false
-	}
-	if len(strings.Fields(t)) == 5 {
-		return t, true
-	}
-	return "", false
 }
 
 var _ backends.Backend = (*Backend)(nil)
