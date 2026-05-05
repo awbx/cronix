@@ -15,6 +15,7 @@ import (
 	"github.com/awbx/cronix/go/internal/backends/crontab"
 	"github.com/awbx/cronix/go/internal/backends/kubernetes"
 	"github.com/awbx/cronix/go/internal/backends/systemd"
+	"github.com/awbx/cronix/go/internal/cli/config"
 	"github.com/awbx/cronix/go/internal/manifest"
 	"github.com/awbx/cronix/go/internal/reconcile"
 	"github.com/awbx/cronix/go/internal/trigger"
@@ -134,33 +135,66 @@ and prints what apply would do. Equivalent to apply --dry-run.`
 }
 
 // buildBackend constructs the named backend with the given options.
+//
+// This is the entry point for flag-driven commands (apply, plan, drift,
+// list, prune). global-status calls BuildBackendFromEntry directly.
 func buildBackend(opts backendOpts) (backends.Backend, error) {
-	switch opts.name {
-	case "", "crontab":
-		return crontab.New(crontab.Options{Path: opts.crontabPath, TriggerBin: opts.triggerBin})
+	return BuildBackendFromEntry(opts.toEntry(), opts.secretRefs)
+}
+
+// BuildBackendFromEntry constructs the backend described by a config
+// entry. Exported so the global-status command (which loads entries
+// from ~/.cronix/config.yaml) can share the same construction logic.
+func BuildBackendFromEntry(e config.BackendEntry, secretRefs []string) (backends.Backend, error) {
+	t := e.Type
+	if t == "" {
+		t = "crontab"
+	}
+	switch t {
+	case "crontab":
+		return crontab.New(crontab.Options{Path: e.CrontabPath, TriggerBin: e.TriggerBin})
 	case "systemd-timer":
 		return systemd.New(systemd.Options{
-			UnitDir:    opts.systemdDir,
-			TriggerBin: opts.triggerBin,
+			UnitDir:    e.UnitDir,
+			TriggerBin: e.TriggerBin,
 		})
 	case "kubernetes":
 		return kubernetes.New(kubernetes.Options{
-			Image:      opts.k8sImage,
-			Namespace:  opts.k8sNamespace,
-			SecretRefs: opts.secretRefs,
-			Kubeconfig: opts.k8sKubeconfig,
-			InCluster:  opts.k8sInCluster,
+			Image:      e.Image,
+			Namespace:  e.Namespace,
+			SecretRefs: secretRefs,
+			Kubeconfig: e.Kubeconfig,
+			InCluster:  e.InCluster,
 		})
 	case "aws-scheduler":
 		return aws.New(context.Background(), aws.Options{
-			Region:        opts.awsRegion,
-			ScheduleGroup: opts.awsScheduleGroup,
-			TargetArn:     opts.awsTargetArn,
-			RoleArn:       opts.awsRoleArn,
-			SecretRefs:    opts.secretRefs,
+			Region:        e.Region,
+			ScheduleGroup: e.ScheduleGroup,
+			TargetArn:     e.TargetArn,
+			RoleArn:       e.RoleArn,
+			SecretRefs:    secretRefs,
 		})
 	default:
-		return nil, fmt.Errorf("unknown backend %q", opts.name)
+		return nil, fmt.Errorf("unknown backend %q", t)
+	}
+}
+
+// toEntry projects the flag-driven options into a config.BackendEntry so
+// the two construction paths can share BuildBackendFromEntry.
+func (o backendOpts) toEntry() config.BackendEntry {
+	return config.BackendEntry{
+		Type:          o.name,
+		CrontabPath:   o.crontabPath,
+		TriggerBin:    o.triggerBin,
+		UnitDir:       o.systemdDir,
+		Namespace:     o.k8sNamespace,
+		Image:         o.k8sImage,
+		Kubeconfig:    o.k8sKubeconfig,
+		InCluster:     o.k8sInCluster,
+		Region:        o.awsRegion,
+		ScheduleGroup: o.awsScheduleGroup,
+		TargetArn:     o.awsTargetArn,
+		RoleArn:       o.awsRoleArn,
 	}
 }
 
