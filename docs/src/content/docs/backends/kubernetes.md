@@ -68,7 +68,7 @@ echo "$yaml" | kubectl apply -f -
 
 ## Concurrency
 
-The CronJob spec sets `concurrencyPolicy: Forbid` and `backoffLimit: 0` — defense in depth. The shim is still the authoritative concurrency enforcer (D-028); K8s preventing duplicate Pods catches misconfigurations early.
+The CronJob spec sets `concurrencyPolicy: Forbid` and `backoffLimit: 0` — defense in depth. The shim is still the authoritative concurrency enforcer; K8s preventing duplicate Pods catches misconfigurations early.
 
 ## Run history
 

@@ -8,7 +8,7 @@
 
 > **Cron jobs as code.** Apps declare scheduled work in their own code; cronix reconciles those declarations against the host's native scheduler — `crontab`, `systemd-timer`, Kubernetes, or AWS EventBridge Scheduler.
 
-> ⚠️ **Pre-alpha.** APIs and on-the-wire shapes may still change. Don't run in production yet — but please try it and file issues.
+> ⚠️ **Under active development.** The on-the-wire spec is stable; APIs may evolve before v1.0. Try it and file issues.
 
 ## Why
 
@@ -189,9 +189,8 @@ Hono, Bun, Workers, Vercel/Next.js, and Deno all serve a Web `Request` natively 
 
 ## Documentation
 
-- **Documentation site** — runs locally with `pnpm --dir docs dev` (Astro Starlight). Sources live in [`docs/src/content/docs/`](./docs/src/content/docs/).
+- **Documentation site** — https://awbx.github.io/cronix/ (sources in [`docs/src/content/docs/`](./docs/src/content/docs/))
 - [spec/RFC.md](./spec/RFC.md) — protocol, manifest, authentication, SDK contract, backend contract
-- [PLAN.md](./PLAN.md) — implementation plan + decision log
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — dev setup, repo layout, conformance vectors
 - [SECURITY.md](./SECURITY.md) — vulnerability disclosure
 
@@ -210,7 +209,7 @@ Hono, Bun, Workers, Vercel/Next.js, and Deno all serve a Web `Request` natively 
 
 cronix is open source under MIT — issues, discussions, and PRs are welcome. A few things worth knowing before you dive in:
 
-- **The RFC is the product.** Behavior changes start as a `## Q-NNN:` entry in [spec/OPEN_QUESTIONS.md](./spec/OPEN_QUESTIONS.md), get discussed, then promote to a `## D-NNN:` decision before code lands.
+- **The RFC is the product.** Behavior changes are discussed and agreed before code lands. The protocol shape (manifest, signing, headers) is the contract; everything else is an implementation detail.
 - **Both languages stay in lock-step.** Manifest shape, header format, and signing scheme changes must land in TypeScript (`@awbx/cronix-sdk`) and Go (`internal/manifest`, `internal/auth`) in the same PR, with both passing the shared `manifest-vectors.json` and `auth-vectors.json`.
 - **Conformance vectors are sacred.** Adding or modifying one is a spec change.
 

@@ -12,7 +12,7 @@ cronix supports four host schedulers in v1. The backend is selected at apply tim
 | [`kubernetes`](/cronix/backends/kubernetes/) | `CronJob` + `ConfigMap` per (app, job, schedule-index) | Anywhere you already run on Kubernetes |
 | [`aws-scheduler`](/cronix/backends/aws/) | EventBridge Schedules → cronix-trigger Lambda | Serverless / multi-account AWS deployments |
 
-## Ownership tracking (D-026)
+## Ownership tracking
 
 Every backend records ownership inside the resource it manages — never in a side-channel state file. cronix never modifies entries it didn't create.
 
@@ -23,7 +23,7 @@ Every backend records ownership inside the resource it manages — never in a si
 | `kubernetes` | `cronix.dev/managed: "true"` + `cronix.dev/{app,job,index,hash}` labels on the `CronJob` and `ConfigMap` |
 | `aws-scheduler` | A `cronix-` name prefix and a structured `Description` field on the EventBridge Schedule |
 
-## Idempotency (D-027)
+## Idempotency
 
 `cronix apply` with no manifest changes is a complete no-op: no file mtime change, no API call, no log churn at INFO. Safe to run on every CI deploy. Hash-based change detection — the `hash=` field carries an FNV-1a fold over the canonical normalized job, so unchanged jobs are skipped.
 

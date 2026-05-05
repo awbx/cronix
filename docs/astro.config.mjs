@@ -25,7 +25,21 @@ export default defineConfig({
           ],
         },
         {
+          label: "Concepts",
+          collapsed: false,
+          items: [
+            { label: "Manifest format", slug: "concepts/manifest" },
+            { label: "Authentication", slug: "concepts/auth" },
+            { label: "Secrets & rotation", slug: "concepts/secrets" },
+            { label: "Concurrency policies", slug: "concepts/concurrency" },
+            { label: "Retries & timeouts", slug: "concepts/retries" },
+            { label: "Trigger lifecycle", slug: "concepts/trigger-lifecycle" },
+            { label: "Drift detection", slug: "concepts/drift" },
+          ],
+        },
+        {
           label: "Backends",
+          collapsed: false,
           items: [
             { label: "Overview", slug: "backends/overview" },
             { label: "crontab", slug: "backends/crontab" },
@@ -36,15 +50,37 @@ export default defineConfig({
         },
         {
           label: "CLI",
+          collapsed: false,
           items: [
+            { label: "apply", slug: "cli/apply" },
+            { label: "plan / diff", slug: "cli/plan" },
+            { label: "drift", slug: "cli/drift" },
+            { label: "list", slug: "cli/list" },
+            { label: "show", slug: "cli/show" },
+            { label: "prune", slug: "cli/prune" },
+            { label: "history", slug: "cli/history" },
+            { label: "validate", slug: "cli/validate" },
+            { label: "trigger", slug: "cli/trigger" },
+            { label: "init", slug: "cli/init" },
+            { label: "version", slug: "cli/version" },
+            { label: "completion", slug: "cli/completion" },
             { label: "global-status", slug: "cli/global-status" },
+            { label: "Backend flags", slug: "cli/backend-flags" },
+          ],
+        },
+        {
+          label: "SDK",
+          collapsed: false,
+          items: [
+            { label: "TypeScript", slug: "sdk/typescript" },
+            { label: "Framework adapters", slug: "sdk/adapters" },
+            { label: "Go", slug: "sdk/go" },
           ],
         },
         {
           label: "Reference",
           items: [
             { label: "RFC (protocol)", link: "https://github.com/awbx/cronix/blob/main/spec/RFC.md" },
-            { label: "Decisions log", link: "https://github.com/awbx/cronix/blob/main/PLAN.md" },
             { label: "Contributing", link: "https://github.com/awbx/cronix/blob/main/CONTRIBUTING.md" },
             { label: "Security", link: "https://github.com/awbx/cronix/blob/main/SECURITY.md" },
           ],
