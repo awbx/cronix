@@ -1,32 +1,131 @@
 # cronix
 
-> **Cron jobs as code.** Apps declare scheduled work in their own code; cronix reconciles those declarations against the host's native scheduler.
+[![npm version](https://img.shields.io/npm/v/@awbx/cronix-sdk.svg?label=%40awbx%2Fcronix-sdk)](https://www.npmjs.com/package/@awbx/cronix-sdk)
+[![Go Reference](https://pkg.go.dev/badge/github.com/awbx/cronix/go.svg)](https://pkg.go.dev/github.com/awbx/cronix/go)
+[![CI](https://github.com/awbx/cronix/actions/workflows/ci.yml/badge.svg)](https://github.com/awbx/cronix/actions/workflows/ci.yml)
+[![Release](https://github.com/awbx/cronix/actions/workflows/release.yml/badge.svg)](https://github.com/awbx/cronix/actions/workflows/release.yml)
+[![License](https://img.shields.io/npm/l/@awbx/cronix-sdk.svg)](./LICENSE)
 
-> ⚠️ **Pre-alpha — under active development.** No release yet; APIs and on-the-wire shapes will change. Do not run in production.
+> **Cron jobs as code.** Apps declare scheduled work in their own code; cronix reconciles those declarations against the host's native scheduler — `crontab`, `systemd-timer`, Kubernetes, or AWS EventBridge Scheduler.
 
-## The pitch
+> ⚠️ **Pre-alpha.** APIs and on-the-wire shapes may still change. Don't run in production yet — but please try it and file issues.
+
+## Why
 
 Today the schedule for a job lives somewhere different from the code that handles it — in a UI, an EventBridge rule, a hand-edited crontab, a separate YAML repo. Changes require coordinating two places. Drift is invisible. Reviewers see the handler change but miss the schedule change.
 
-`cronix` puts the schedule next to the handler. The application is the source of truth for its own schedules via a manifest endpoint. `cronix apply` reconciles that manifest against whatever scheduler the host provides — `crontab`, `systemd-timer`, Kubernetes — installing, updating, or removing entries as needed. The host's native scheduler does the firing. A small Go binary, `cronix trigger`, handles HMAC signing, concurrency locks, timeouts, and retries on every fire.
+`cronix` puts the schedule next to the handler. Your app is the source of truth for its own schedules via a `/.well-known/cron-manifest` endpoint. `cronix apply` reconciles that manifest against whichever scheduler the host provides. The host scheduler does the firing. A small Go binary, `cronix trigger`, handles HMAC signing, concurrency locks, timeouts, and retries on every fire.
 
-The protocol is the product. The reconciler and SDK are reference implementations.
+The protocol is the product. The reconciler and SDKs are reference implementations.
 
-## Repo layout (polyglot monorepo)
+## Install
 
+### CLI (the reconciler)
+
+```bash
+# macOS — Homebrew
+brew install awbx/cronix/cronix
+
+# Linux / macOS — one-liner
+curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh | sh
+
+# Pin a version + custom install dir
+curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh \
+  | CRONIX_VERSION=v0.7.2 INSTALL_DIR=/usr/local/bin sh
+
+# Linux packages — grab from the latest release
+# https://github.com/awbx/cronix/releases/latest
+#   cronix_<ver>_linux_amd64.deb  (Debian/Ubuntu)
+#   cronix_<ver>_linux_amd64.rpm  (RHEL/Fedora/openSUSE)
+#   cronix_<ver>_linux_amd64.apk  (Alpine)
+
+# Go developers
+go install github.com/awbx/cronix/go/cmd/cronix@latest
+
+# Docker
+docker pull awbx/cronix
 ```
-cronix/
-├── spec/         # language-neutral: RFC, DECISIONS, JSON Schema, conformance vectors
-├── ts/           # TypeScript workspace (pnpm) — @awbx/cronix-sdk + framework adapters + examples
-├── go/           # Go module (github.com/awbx/cronix/go) — cmd/cronix binary + internal/ + pkg/cronsdk
-├── deploy/       # Dockerfile, Helm chart — language-neutral
-├── .github/      # CI workflows
-└── PLAN.md       # Implementation plan
+
+Verify:
+
+```bash
+cronix version
 ```
 
-Future SDKs (Python, Ruby, …) get their own top-level directory. The `spec/` directory is the source of truth for cross-language correctness — every SDK passes the same `manifest-vectors.json` and `auth-vectors.json`.
+### App SDK
 
-## Architecture
+```bash
+# TypeScript
+pnpm add @awbx/cronix-sdk
+
+# Framework adapters (only if you need them — see below)
+pnpm add @awbx/cronix-adapter-express
+pnpm add @awbx/cronix-adapter-fastify
+pnpm add @awbx/cronix-adapter-koa
+pnpm add @awbx/cronix-adapter-nest
+
+# Go (signature verification only)
+go get github.com/awbx/cronix/go/pkg/cronsdk
+```
+
+## Quick start (TypeScript + Hono)
+
+```ts
+import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
+import { Hono } from "hono";
+
+const cron = createCron({
+  app: "billing-service",
+  baseUrl: "https://billing.example.com",
+  secret: process.env.CRON_SECRET!,
+});
+
+cron.register({
+  name: "reconcile-payments",
+  schedule: "*/15 * * * *",
+  auth: { secret_refs: ["env:CRON_SECRET"] },
+  handler: async (ctx) => {
+    console.log(`fired ${ctx.name} run=${ctx.runId}`);
+    // your work here
+    return { ok: true };
+  },
+});
+
+const app = new Hono();
+app.all(MANIFEST_PATH, (c) => cron.handle(c.req.raw));
+app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) => cron.handle(c.req.raw));
+
+export default app;
+```
+
+Reconcile from your laptop or CI:
+
+```bash
+cronix apply \
+  --manifest https://billing.example.com/.well-known/cron-manifest \
+  --backend crontab \
+  --crontab-path /etc/crontab \
+  --trigger-bin /usr/local/bin/cronix \
+  --secret-ref env:CRON_SECRET
+```
+
+That's it. Your `*/15 * * * *` line lives in your app code; `cron(8)` actually fires it; `cronix trigger` signs the request and POSTs back to your handler.
+
+## Examples
+
+Runnable mini-apps, each one ~50 lines:
+
+| Example | Stack |
+|---|---|
+| [ts/examples/hono-app](./ts/examples/hono-app) | Hono — runs unchanged on Node, Bun, Cloudflare Workers |
+| [ts/examples/express-app](./ts/examples/express-app) | Express + `@awbx/cronix-adapter-express` |
+| [ts/examples/fastify-app](./ts/examples/fastify-app) | Fastify + `@awbx/cronix-adapter-fastify` |
+| [ts/examples/hand-rolled](./ts/examples/hand-rolled) | No framework — just `node:http` + `verifyManifest`/`verifyTrigger` |
+| [go/examples/go-app](./go/examples/go-app) | Go `net/http` server using `pkg/cronsdk` for HMAC verify |
+
+Each example has a README with the exact `pnpm dev` (or `go run`) command and a curl recipe to test end-to-end.
+
+## How it works
 
 ```
               app (your service)
@@ -39,152 +138,90 @@ Future SDKs (Python, Ruby, …) get their own top-level directory. The `spec/` d
                        │
                        │ (2) install/update/delete entries
                        ▼
-              host scheduler (crontab / systemd-timer / k8s CronJob)
+              host scheduler (crontab / systemd / k8s CronJob / EventBridge)
                        │
                        │ (3) invoke on schedule
                        ▼
                 cronix trigger (Go)
                        │   • acquires lock
-                       │   • signs HMAC
+                       │   • signs HMAC (Stripe-style)
                        │   • POSTs to your handler
                        │   • applies timeout + retries
                        ▼
                 app handler (verifies signature, dedupes by run-id)
 ```
 
-## Status
+## Backends
 
-v1 release candidate. As of v0.5.0:
+| Backend | What it writes | Setup |
+|---|---|---|
+| `crontab` | `/etc/crontab` lines with `# cronix:owned` markers | [docs/crontab.md](./docs/crontab.md) |
+| `systemd-timer` | `.timer` + `.service` units in `/etc/systemd/system` | [docs/systemd.md](./docs/systemd.md) |
+| `kubernetes` | `CronJob` + `ConfigMap` per job | [docs/kubernetes.md](./docs/kubernetes.md) |
+| `aws-scheduler` | EventBridge Schedules → cronix-trigger Lambda | [docs/aws.md](./docs/aws.md) |
 
-- All three backends — `crontab`, `systemd-timer`, `kubernetes` — fully reconcile against their host scheduler.
-- `cronix history` reads runs from every backend (journalctl for crontab + systemd-timer, Pod logs for kubernetes).
-- CLI: `init`, `validate`, `plan` / `diff`, `apply`, `drift`, `list`, `show`, `prune`, `history`, `trigger`, `version`, `completion`. Phase 6 of [PLAN.md](./PLAN.md) is feature-complete.
+cronix tracks ownership inside each resource — it never touches lines, units, or objects it didn't create. Run alongside hand-edited entries safely.
 
-The on-the-wire spec is frozen. Authoritative spec: [spec/RFC.md](./spec/RFC.md). Implementation history: [PLAN.md](./PLAN.md).
+## Framework adapters (TypeScript)
 
-## Documentation
-
-- [spec/RFC.md](./spec/RFC.md) — protocol, manifest, authentication, SDK contract, backend contract, CLI, deployment
-- [docs/crontab.md](./docs/crontab.md), [docs/systemd.md](./docs/systemd.md), [docs/kubernetes.md](./docs/kubernetes.md) — per-backend setup
-- [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md)
-- [ts/examples/express-app](./ts/examples/express-app), [ts/examples/fastify-app](./ts/examples/fastify-app), [ts/examples/hono-app](./ts/examples/hono-app), [ts/examples/hand-rolled](./ts/examples/hand-rolled), [go/examples/go-app](./go/examples/go-app)
-
-## Build
-
-```bash
-# TypeScript
-cd ts
-pnpm install
-pnpm build && pnpm test && pnpm lint && pnpm typecheck
-
-# Go
-cd go
-go build ./...
-go test ./...
-go vet ./...
-
-# Multi-platform binaries (snapshot — no release) from repo root
-goreleaser build --snapshot --clean
-```
-
-## Install
-
-```bash
-# CLI — one-liner (Linux/macOS, amd64/arm64)
-curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh | sh
-
-# CLI — pinned version + custom install dir
-curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh \
-  | CRONIX_VERSION=v0.5.0 INSTALL_DIR=/usr/local/bin sh
-
-# CLI — Go install
-go install github.com/awbx/cronix/go/cmd/cronix@latest
-
-# CLI — Docker
-docker pull awbx/cronix
-
-# TypeScript SDK
-pnpm add @awbx/cronix-sdk
-```
-
-## TypeScript SDK — minimal hono example
-
-```ts
-import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
-import { Hono } from "hono";
-
-// Hono-style typed environment. Bindings are app-scoped (set once at
-// createCron). Variables are per-fire (set at cron.handle).
-type CronEnv = {
-  Bindings: { db: Database; logger: Logger };
-  Variables: { traceId: string };
-};
-
-const cron = createCron<CronEnv>({
-  app: "billing-service",
-  baseUrl: "https://billing.example.com",
-  secret: process.env.CRON_SECRET!,
-  env: { db, logger: console },        // ← app-scoped
-});
-
-cron.register({
-  name: "reconcile-payments",
-  schedule: "*/15 * * * *",
-  auth: { secret_refs: ["env:CRON_SECRET"] },
-  handler: async (ctx) => {
-    // ctx.env.<key> and ctx.var.<key> are fully typed
-    ctx.env.logger.info(`fired ${ctx.name} run=${ctx.runId} trace=${ctx.var.traceId}`);
-    await ctx.env.db.query("UPDATE payments SET ...");
-    return { ok: true };
-  },
-});
-
-const app = new Hono();
-app.all(MANIFEST_PATH, (c) => cron.handle(c.req.raw));
-app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) =>
-  cron.handle(c.req.raw, { vars: { traceId: crypto.randomUUID() } }),  // ← per-fire
-);
-```
-
-`cron.handle(req, opts)` is the **zero-glue** path. For more control there are explicit `cron.verifyManifest(req)` / `cron.verifyTrigger(req)` methods, plus `cron.on(name, handler)` for late-binding handlers from another file. Both methods accept the same `{vars}` option. See [`ts/examples/`](./ts/examples/) for the runnable hono / express / fastify variants.
-
-### Framework adapters
-
-For frameworks that don't speak Web Fetch natively, the SDK ships subpath adapters that lift any `(req: Request) => Response | Promise<Response>` to a framework-native handler. You wire your own routes — the adapter just bridges the request/response shapes:
+For frameworks that don't speak Web Fetch natively, install the matching sibling adapter package. Each one exports a `handle()` that lifts any `(req: Request) => Response | Promise<Response>` into a framework-native handler:
 
 ```ts
 // Express
-import { handle } from "@awbx/cronix-sdk/express";
+import { handle } from "@awbx/cronix-adapter-express";
 app.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
-app.all(`${TRIGGER_PATH_PREFIX}:name`, handle((req) =>
-  cron.handle(req, { vars: { traceId: crypto.randomUUID() } }),
-));
 
-// Fastify (rawBody installs a wildcard parser to keep the bytes-as-sent)
-import { handle, rawBody } from "@awbx/cronix-sdk/fastify";
+// Fastify (rawBody installs a wildcard parser to keep bytes-as-sent)
+import { handle, rawBody } from "@awbx/cronix-adapter-fastify";
 rawBody(app);
 app.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
-app.all(`${TRIGGER_PATH_PREFIX}:name`, handle((req) => cron.handle(req)));
 
-// Koa (mount before any body-parser middleware so HMAC sees the raw bytes)
-import { handle } from "@awbx/cronix-sdk/koa";
+// Koa (mount before any body-parser middleware)
+import { handle } from "@awbx/cronix-adapter-koa";
 router.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
-router.all(`${TRIGGER_PATH_PREFIX}:name`, handle((req) => cron.handle(req)));
 
 // NestJS (Express by default — bootstrap with `bodyParser: false`)
-import { handle } from "@awbx/cronix-sdk/nest";
+import { handle } from "@awbx/cronix-adapter-nest";
 app.use(MANIFEST_PATH, handle((req) => cron.handle(req)));
-app.use(`${TRIGGER_PATH_PREFIX}:name`, handle((req) => cron.handle(req)));
-
-// Vercel (Next.js route handlers / Edge functions — Web Request native)
-// app/api/cron/[[...slug]]/route.ts
-import { handle } from "@awbx/cronix-sdk/vercel";
-export const POST = handle((req) => cron.handle(req));
-export const GET = handle((req) => cron.handle(req));
 ```
 
-Because `handle()` takes any fetch fn — not the cron instance directly — you can compose freely (logging, auth, routing across multiple cron instances). Hono / Workers / Bun / Deno serve a Web `Request` natively, so they don't need an adapter.
+Hono, Bun, Workers, Vercel/Next.js, and Deno all serve a Web `Request` natively — no adapter needed; just call `cron.handle(req)` directly from your route.
+
+## Documentation
+
+- [spec/RFC.md](./spec/RFC.md) — protocol, manifest, authentication, SDK contract, backend contract
+- [docs/](./docs/) — per-backend operator guides
+- [PLAN.md](./PLAN.md) — implementation plan + decision log
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — dev setup, repo layout, conformance vectors
+- [SECURITY.md](./SECURITY.md) — vulnerability disclosure
+
+## Project status
+
+| Area | State |
+|---|---|
+| Spec | RFC v1 frozen — see [spec/RFC.md](./spec/RFC.md) |
+| Backends | `crontab`, `systemd-timer`, `kubernetes`, `aws-scheduler` — all reconcile end-to-end |
+| CLI | `init`, `validate`, `plan` / `diff`, `apply`, `drift`, `list`, `global-status`, `show`, `prune`, `history`, `trigger`, `version`, `completion` |
+| TypeScript SDK | `@awbx/cronix-sdk` + 4 framework adapters, conformance-tested against shared spec vectors |
+| Go SDK | `pkg/cronsdk` — HMAC verify only, conformance-tested |
+| Distribution | Homebrew tap, deb / rpm / apk, Docker, npm |
+
+## Contributing
+
+cronix is open source under MIT — issues, discussions, and PRs are welcome. A few things worth knowing before you dive in:
+
+- **The RFC is the product.** Behavior changes start as a `## Q-NNN:` entry in [spec/OPEN_QUESTIONS.md](./spec/OPEN_QUESTIONS.md), get discussed, then promote to a `## D-NNN:` decision before code lands.
+- **Both languages stay in lock-step.** Manifest shape, header format, and signing scheme changes must land in TypeScript (`@awbx/cronix-sdk`) and Go (`internal/manifest`, `internal/auth`) in the same PR, with both passing the shared `manifest-vectors.json` and `auth-vectors.json`.
+- **Conformance vectors are sacred.** Adding or modifying one is a spec change.
+
+Full dev setup, branch flow, and release process: [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+Quick paths to help if you're new:
+
+- **File an issue** about something that surprised you — bad error messages, missing docs, unclear flags. No issue is too small.
+- **Add an example** for a stack we don't yet cover (Bun-only, Cloudflare Workers, AWS Lambda app, etc.).
+- **Port the SDK** — Python and Ruby SDKs are wide open. The conformance vectors give you a green-light test suite.
 
 ## License
 
-MIT © Abdelhadi Sabani
+MIT © Abdelhadi Sabani — see [LICENSE](./LICENSE).
