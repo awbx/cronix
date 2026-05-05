@@ -1,0 +1,18 @@
+[Unit]
+Description=cronix timer: {{.App}}.{{.Job}} (idx={{.Index}})
+PartOf={{.UnitName}}.service
+X-Cronix-App={{.App}}
+X-Cronix-Job={{.Job}}
+X-Cronix-Index={{.Index}}
+X-Cronix-OnCalendar={{.OnCalendar}}
+{{- if .Hash}}
+X-Cronix-Hash={{.Hash}}
+{{- end}}
+
+[Timer]
+OnCalendar={{.OnCalendar}}
+Unit={{.UnitName}}.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

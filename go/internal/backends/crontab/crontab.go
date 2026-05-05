@@ -27,6 +27,7 @@ import (
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/backends/historyutil"
 	"github.com/awbx/cronix/go/internal/manifest"
+	"github.com/awbx/cronix/go/internal/policy"
 )
 
 // JournalctlExecutor runs `journalctl` and returns its raw output. Used
@@ -309,7 +310,7 @@ func render(app, triggerBin string, job manifest.NormalizedJob) []string {
 			// emitting a malformed crontab line.
 			continue
 		}
-		hash := hashJobSchedule(job, i)
+		hash := policy.Hash(job, i)
 		out = append(out,
 			fmt.Sprintf("%s %s trigger %s.%s", cron, triggerBin, app, job.Name),
 			fmt.Sprintf("# cronix:owned app=%s job=%s hash=%s idx=%d", app, job.Name, hash, i),
@@ -398,29 +399,6 @@ func translate(s string) (string, bool) {
 		return t, true
 	}
 	return "", false
-}
-
-// hashJobSchedule produces a 16-char change-detection hash for one
-// (job, scheduleIndex). It uses the canonical normalized-manifest
-// serialization plus an FNV-1a folding over (bytes ⨁ index).
-func hashJobSchedule(job manifest.NormalizedJob, idx int) string {
-	b, _ := manifest.Canonicalize(&manifest.NormalizedManifest{
-		Version: 1,
-		App:     "_hash_",
-		Jobs:    []manifest.NormalizedJob{job},
-	})
-	const (
-		offset64 = uint64(1469598103934665603)
-		prime64  = uint64(1099511628211)
-	)
-	h := offset64
-	for _, x := range b {
-		h ^= uint64(x)
-		h *= prime64
-	}
-	h ^= uint64(idx)
-	h *= prime64
-	return fmt.Sprintf("%016x", h)
 }
 
 var _ backends.Backend = (*Backend)(nil)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/manifest"
+	"github.com/awbx/cronix/go/internal/policy"
 )
 
 // Action is one operation in a Plan.
@@ -228,32 +229,16 @@ func (p *Plan) IsNoop() bool {
 // appJob is the (app, job) compound key used for plan grouping.
 type appJob struct{ App, Job string }
 
-// computeDesiredHashes uses the same hash construction the crontab
-// backend uses (FNV-1a over the canonicalized manifest, salted by
-// schedule index). For symmetry across backends, the reconciler treats
-// the hash as opaque — backends that use a different scheme would
-// surface their own per-index hashes via List() and the comparison
-// would still work as long as the same scheme is used on both sides.
+// computeDesiredHashes returns one policy.Hash per schedule index for
+// the given job. The reconciler compares these against the hashes
+// backends report through List() to decide create/update/no-op.
+//
+// The hash algorithm itself lives in internal/policy so backends and
+// the reconciler stay byte-identical when computing it.
 func computeDesiredHashes(job manifest.NormalizedJob) []string {
 	out := make([]string, len(job.Schedules))
-	b, _ := manifest.Canonicalize(&manifest.NormalizedManifest{
-		Version: 1,
-		App:     "_hash_",
-		Jobs:    []manifest.NormalizedJob{job},
-	})
-	const (
-		offset64 = uint64(1469598103934665603)
-		prime64  = uint64(1099511628211)
-	)
 	for i := range job.Schedules {
-		h := offset64
-		for _, x := range b {
-			h ^= uint64(x)
-			h *= prime64
-		}
-		h ^= uint64(i)
-		h *= prime64
-		out[i] = fmt.Sprintf("%016x", h)
+		out[i] = policy.Hash(job, i)
 	}
 	return out
 }
