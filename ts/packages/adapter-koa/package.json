@@ -1,6 +1,6 @@
 {
   "name": "@awbx/cronix-adapter-koa",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Koa adapter for @awbx/cronix-sdk. Lifts cron.handle into Koa middleware while preserving the raw bytes-as-sent for HMAC verification.",
   "type": "module",
   "main": "./dist/index.cjs",
