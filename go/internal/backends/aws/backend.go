@@ -19,32 +19,24 @@
 // therefore cannot carry a fresh-per-fire HMAC signature. cronix's
 // signed-trigger contract requires a per-fire timestamp + signature
 // over the canonical body, so the AWS backend's recommended target is
-// a thin Lambda function that:
+// a thin Lambda function (deploy/aws/cronix-trigger-lambda/) that
+// receives the spec inline as the schedule input, signs the canonical
+// request, and POSTs to the application.
 //
-//  1. Receives the schedule's input (the cronix run payload encoded
-//     as base64 JSON, including the (app, job) identifier).
-//  2. Resolves the secret from SSM Parameter Store / Secrets Manager.
-//  3. Signs the canonical request per spec/RFC.md §Authentication.
-//  4. Issues the HTTPS POST to the application's
-//     /api/v1/scheduled/<job> endpoint.
+// File layout:
 //
-// The Lambda is deployed once per AWS account; the backend creates one
-// EventBridge Schedule per (app, job, index) targeting that single
-// Lambda with per-job input. Reference Lambda code lives in
-// deploy/aws/cronix-trigger-lambda/ (follow-up).
-//
-// # Status
-//
-// Apply / drift / list / prune work end-to-end. History wires a
-// deferred CloudWatch Logs reader; returns nil for now.
+//	policy.go    backend-local conventions (DefaultScheduleGroup,
+//	             descriptionPrefix, nameMaxLen)
+//	parse.go     parseDescription (decode owned schedules)
+//	cron.go      schedule expression → AWS cron(...) translator
+//	render.go    buildTargetInput (inline SpecFile JSON), buildDescription
+//	client.go    SchedulerAPI / STSAPI interfaces (test seams)
+//	backend.go   Backend type + Options + Backend interface methods
 package aws
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strconv"
-	"strings"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -55,28 +47,7 @@ import (
 	"github.com/awbx/cronix/go/internal/backends"
 	"github.com/awbx/cronix/go/internal/manifest"
 	"github.com/awbx/cronix/go/internal/policy"
-	"github.com/awbx/cronix/go/internal/trigger"
 )
-
-// descriptionPrefix marks every cronix-owned EventBridge Schedule.
-// Description format: `cronix-managed app=<app> job=<job> idx=<idx> hash=<hex>`.
-const descriptionPrefix = "cronix-managed"
-
-// SchedulerAPI is the subset of EventBridge Scheduler operations the
-// backend uses. Defined as an interface so tests can inject a fake
-// without spinning up real AWS calls.
-type SchedulerAPI interface {
-	ListSchedules(ctx context.Context, in *scheduler.ListSchedulesInput, opts ...func(*scheduler.Options)) (*scheduler.ListSchedulesOutput, error)
-	GetSchedule(ctx context.Context, in *scheduler.GetScheduleInput, opts ...func(*scheduler.Options)) (*scheduler.GetScheduleOutput, error)
-	CreateSchedule(ctx context.Context, in *scheduler.CreateScheduleInput, opts ...func(*scheduler.Options)) (*scheduler.CreateScheduleOutput, error)
-	UpdateSchedule(ctx context.Context, in *scheduler.UpdateScheduleInput, opts ...func(*scheduler.Options)) (*scheduler.UpdateScheduleOutput, error)
-	DeleteSchedule(ctx context.Context, in *scheduler.DeleteScheduleInput, opts ...func(*scheduler.Options)) (*scheduler.DeleteScheduleOutput, error)
-}
-
-// STSAPI is the subset of STS operations used by Ensure (auth probe).
-type STSAPI interface {
-	GetCallerIdentity(ctx context.Context, in *sts.GetCallerIdentityInput, opts ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
-}
 
 // Backend is the AWS EventBridge Scheduler backend.
 type Backend struct {
@@ -94,8 +65,8 @@ type Options struct {
 	// resolves: env, ~/.aws/config, EC2/EKS metadata).
 	Region string
 	// ScheduleGroup names the EventBridge schedule group cronix's
-	// schedules live in. Operators MUST create the group out-of-band
-	// (or accept the AWS-managed "default" group).
+	// schedules live in. Defaults to DefaultScheduleGroup. Operators
+	// using a dedicated group MUST create it out-of-band.
 	ScheduleGroup string
 	// TargetArn is the ARN of the Lambda / HTTPS endpoint the schedule
 	// invokes. Required.
@@ -125,7 +96,7 @@ func New(ctx context.Context, opts Options) (*Backend, error) {
 	}
 	group := opts.ScheduleGroup
 	if group == "" {
-		group = "default"
+		group = DefaultScheduleGroup
 	}
 	scl := opts.Scheduler
 	stc := opts.STS
@@ -195,39 +166,6 @@ func (b *Backend) List(ctx context.Context) ([]backends.ManagedEntry, error) {
 	return out, nil
 }
 
-// parseDescription reads ownership fields out of the schedule
-// description. Format: `cronix-managed app=<app> job=<job> idx=<n> hash=<hex>`.
-func parseDescription(s string) (backends.ManagedEntry, bool) {
-	if !strings.HasPrefix(s, descriptionPrefix) {
-		return backends.ManagedEntry{}, false
-	}
-	rest := strings.TrimPrefix(s, descriptionPrefix)
-	fields := strings.Fields(rest)
-	out := backends.ManagedEntry{}
-	for _, f := range fields {
-		eq := strings.IndexByte(f, '=')
-		if eq < 0 {
-			continue
-		}
-		k, v := f[:eq], f[eq+1:]
-		switch k {
-		case "app":
-			out.App = v
-		case "job":
-			out.Job = v
-		case "hash":
-			out.Hash = v
-		case "idx":
-			n, _ := strconv.Atoi(v)
-			out.Index = n
-		}
-	}
-	if out.App == "" || out.Job == "" {
-		return backends.ManagedEntry{}, false
-	}
-	return out, true
-}
-
 // Create installs one EventBridge Schedule per schedule of `job`.
 func (b *Backend) Create(ctx context.Context, app string, job manifest.NormalizedJob) error {
 	for i, sched := range job.Schedules {
@@ -237,7 +175,7 @@ func (b *Backend) Create(ctx context.Context, app string, job manifest.Normalize
 		}
 		hash := policy.Hash(job, i)
 		name := policy.ScheduleName(app, job.Name, i)
-		payload, err := b.buildTargetInput(app, job, i)
+		payload, err := buildTargetInput(app, job, i, b.secretRefs)
 		if err != nil {
 			return fmt.Errorf("aws: build target input for %s: %w", name, err)
 		}
@@ -300,8 +238,8 @@ func (*Backend) Validate(job manifest.NormalizedJob) backends.ValidationResult {
 			issues = append(issues, fmt.Sprintf("schedules[%d]: %v", i, err))
 		}
 	}
-	if n := len(policy.ScheduleName("dummyapp", job.Name, 0)); n > 64 {
-		issues = append(issues, fmt.Sprintf("schedule name would exceed AWS 64-char limit (got %d)", n))
+	if n := len(policy.ScheduleName("dummyapp", job.Name, 0)); n > nameMaxLen {
+		issues = append(issues, fmt.Sprintf("schedule name would exceed AWS %d-char limit (got %d)", nameMaxLen, n))
 	}
 	return backends.ValidationResult{OK: len(issues) == 0, Issues: issues}
 }
@@ -319,87 +257,6 @@ func (b *Backend) Ensure(ctx context.Context) error {
 		return fmt.Errorf("aws: sts:GetCallerIdentity: %w", err)
 	}
 	return nil
-}
-
-// buildTargetInput is the JSON payload EventBridge passes to the
-// Lambda shim. We embed the full SpecFile inline so the Lambda is
-// self-contained — no separate spec store (S3, SSM Parameter Store)
-// required for v1. The Lambda parses this directly into a SpecFile.
-//
-// AWS's documented Schedule Input limit is 256 KiB. Typical bodies fit
-// comfortably; oversize bodies are a future concern (offload to S3,
-// pass the s3 URI inline).
-func (b *Backend) buildTargetInput(app string, job manifest.NormalizedJob, idx int) (string, error) {
-	spec := trigger.SpecFile{
-		App:           app,
-		Job:           job,
-		SecretRefs:    b.secretRefs,
-		ScheduleIndex: idx,
-	}
-	raw, err := json.Marshal(spec)
-	if err != nil {
-		return "", fmt.Errorf("marshal spec: %w", err)
-	}
-	return string(raw), nil
-}
-
-func buildDescription(app, jobName string, idx int, hash string) string {
-	return fmt.Sprintf("%s app=%s job=%s idx=%d hash=%s", descriptionPrefix, app, jobName, idx, hash)
-}
-
-func timezone(job manifest.NormalizedJob) string {
-	if job.Timezone == "" {
-		return "UTC"
-	}
-	return job.Timezone
-}
-
-// translateAWSCron maps a manifest schedule to EventBridge's
-// `cron(min hr day month day-of-week year)` form. Differences vs
-// classic 5-field cron:
-//
-//   - 6 fields total (the trailing year, usually `*`).
-//   - day-of-month and day-of-week are mutually exclusive: exactly one
-//     must be `?`. AWS rejects `*` on both at the same time.
-//
-// Standard 5-field cron with `*` on day-of-month becomes `?` here, and
-// a non-`*` day-of-week likewise forces day-of-month to `?`.
-func translateAWSCron(s string) (string, error) {
-	t := strings.TrimSpace(s)
-	switch t {
-	case "@hourly":
-		return "cron(0 * * * ? *)", nil
-	case "@daily", "@midnight":
-		return "cron(0 0 * * ? *)", nil
-	case "@weekly":
-		return "cron(0 0 ? * SUN *)", nil
-	case "@monthly":
-		return "cron(0 0 1 * ? *)", nil
-	case "@yearly", "@annually":
-		return "cron(0 0 1 1 ? *)", nil
-	}
-	if strings.HasPrefix(t, "@every") {
-		return "", fmt.Errorf("aws-scheduler: @every shortcuts not supported; use rate(...) form which cronix doesn't model yet")
-	}
-	f := strings.Fields(t)
-	if len(f) != 5 {
-		return "", fmt.Errorf("aws-scheduler: expected 5-field cron, got %q", s)
-	}
-	min, hr, dom, mon, dow := f[0], f[1], f[2], f[3], f[4]
-	// AWS requires exactly one of dom/dow to be `?`. Convert standard
-	// cron's `*` semantics: prefer `?` on whichever the manifest left
-	// unconstrained.
-	if dow == "*" && dom != "*" {
-		dow = "?"
-	} else if dom == "*" && dow != "*" {
-		dom = "?"
-	} else if dom == "*" && dow == "*" {
-		dow = "?"
-	} else {
-		// Both constrained — AWS will reject. Prefer dom, blank dow.
-		dow = "?"
-	}
-	return fmt.Sprintf("cron(%s %s %s %s %s *)", min, hr, dom, mon, dow), nil
 }
 
 var _ backends.Backend = (*Backend)(nil)
