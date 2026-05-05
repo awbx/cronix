@@ -1,0 +1,55 @@
+import { defineConfig } from "astro/config";
+import starlight from "@astrojs/starlight";
+
+export default defineConfig({
+  site: "https://awbx.github.io",
+  base: "/cronix",
+  integrations: [
+    starlight({
+      title: "cronix",
+      description: "Cron jobs as code — reconcile app-declared schedules against the host's native scheduler.",
+      social: {
+        github: "https://github.com/awbx/cronix",
+        npm: "https://www.npmjs.com/package/@awbx/cronix-sdk",
+      },
+      editLink: {
+        baseUrl: "https://github.com/awbx/cronix/edit/main/docs/",
+      },
+      lastUpdated: true,
+      sidebar: [
+        {
+          label: "Getting started",
+          items: [
+            { label: "Install", slug: "install" },
+            { label: "Quick start", slug: "quickstart" },
+          ],
+        },
+        {
+          label: "Backends",
+          items: [
+            { label: "Overview", slug: "backends/overview" },
+            { label: "crontab", slug: "backends/crontab" },
+            { label: "systemd-timer", slug: "backends/systemd" },
+            { label: "Kubernetes", slug: "backends/kubernetes" },
+            { label: "AWS EventBridge Scheduler", slug: "backends/aws" },
+          ],
+        },
+        {
+          label: "CLI",
+          items: [
+            { label: "global-status", slug: "cli/global-status" },
+          ],
+        },
+        {
+          label: "Reference",
+          items: [
+            { label: "RFC (protocol)", link: "https://github.com/awbx/cronix/blob/main/spec/RFC.md" },
+            { label: "Decisions log", link: "https://github.com/awbx/cronix/blob/main/PLAN.md" },
+            { label: "Contributing", link: "https://github.com/awbx/cronix/blob/main/CONTRIBUTING.md" },
+            { label: "Security", link: "https://github.com/awbx/cronix/blob/main/SECURITY.md" },
+          ],
+        },
+      ],
+    }),
+  ],
+});

@@ -155,10 +155,10 @@ Each example has a README with the exact `pnpm dev` (or `go run`) command and a 
 
 | Backend | What it writes | Setup |
 |---|---|---|
-| `crontab` | `/etc/crontab` lines with `# cronix:owned` markers | [docs/crontab.md](./docs/crontab.md) |
-| `systemd-timer` | `.timer` + `.service` units in `/etc/systemd/system` | [docs/systemd.md](./docs/systemd.md) |
-| `kubernetes` | `CronJob` + `ConfigMap` per job | [docs/kubernetes.md](./docs/kubernetes.md) |
-| `aws-scheduler` | EventBridge Schedules → cronix-trigger Lambda | [docs/aws.md](./docs/aws.md) |
+| `crontab` | `/etc/crontab` lines with `# cronix:owned` markers | [docs/src/content/docs/backends/crontab.md](./docs/src/content/docs/backends/crontab.md) |
+| `systemd-timer` | `.timer` + `.service` units in `/etc/systemd/system` | [docs/src/content/docs/backends/systemd.md](./docs/src/content/docs/backends/systemd.md) |
+| `kubernetes` | `CronJob` + `ConfigMap` per job | [docs/src/content/docs/backends/kubernetes.md](./docs/src/content/docs/backends/kubernetes.md) |
+| `aws-scheduler` | EventBridge Schedules → cronix-trigger Lambda | [docs/src/content/docs/backends/aws.md](./docs/src/content/docs/backends/aws.md) |
 
 cronix tracks ownership inside each resource — it never touches lines, units, or objects it didn't create. Run alongside hand-edited entries safely.
 
@@ -189,8 +189,8 @@ Hono, Bun, Workers, Vercel/Next.js, and Deno all serve a Web `Request` natively 
 
 ## Documentation
 
+- **Documentation site** — runs locally with `pnpm --dir docs dev` (Astro Starlight). Sources live in [`docs/src/content/docs/`](./docs/src/content/docs/).
 - [spec/RFC.md](./spec/RFC.md) — protocol, manifest, authentication, SDK contract, backend contract
-- [docs/](./docs/) — per-backend operator guides
 - [PLAN.md](./PLAN.md) — implementation plan + decision log
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — dev setup, repo layout, conformance vectors
 - [SECURITY.md](./SECURITY.md) — vulnerability disclosure

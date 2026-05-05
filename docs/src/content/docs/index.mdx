@@ -1,0 +1,46 @@
+---
+title: cronix
+description: Cron jobs as code — reconcile app-declared schedules against the host's native scheduler.
+template: splash
+hero:
+  tagline: Cron jobs as code. Apps declare scheduled work in their own code; cronix reconciles those declarations against the host's native scheduler — crontab, systemd-timer, Kubernetes, or AWS EventBridge Scheduler.
+  actions:
+    - text: Quick start
+      link: /cronix/quickstart/
+      icon: right-arrow
+      variant: primary
+    - text: Source on GitHub
+      link: https://github.com/awbx/cronix
+      icon: external
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+## Why cronix
+
+Today the schedule for a job lives somewhere different from the code that handles it — in a UI, an EventBridge rule, a hand-edited crontab, a separate YAML repo. Changes require coordinating two places. Drift is invisible. Reviewers see the handler change but miss the schedule change.
+
+cronix puts the schedule next to the handler. Your app is the source of truth for its own schedules via a `/.well-known/cron-manifest` endpoint. `cronix apply` reconciles that manifest against whichever scheduler the host provides. The host scheduler does the firing. A small Go binary, `cronix trigger`, handles HMAC signing, concurrency locks, timeouts, and retries on every fire.
+
+The protocol is the product. The reconciler and SDKs are reference implementations.
+
+<CardGrid stagger>
+  <Card title="Install" icon="rocket">
+    Five paths — Homebrew, curl one-liner, deb / rpm / apk, `go install`, Docker. [Install →](/cronix/install/)
+  </Card>
+  <Card title="Quick start" icon="open-book">
+    Wire the SDK into a Hono app, then reconcile from your laptop in under five minutes. [Quick start →](/cronix/quickstart/)
+  </Card>
+  <Card title="Backends" icon="setting">
+    crontab, systemd-timer, Kubernetes, AWS EventBridge Scheduler — all reconcile end-to-end. [Backends →](/cronix/backends/overview/)
+  </Card>
+  <Card title="RFC" icon="document">
+    The on-the-wire spec — manifest shape, HMAC signing, SDK contract, backend contract. [Read the RFC →](https://github.com/awbx/cronix/blob/main/spec/RFC.md)
+  </Card>
+</CardGrid>
+
+## Project status
+
+:::caution[Pre-alpha]
+APIs and on-the-wire shapes may still change. Don't run in production yet — but please try it and file issues.
+:::

@@ -1,6 +1,11 @@
-# Backend: aws-scheduler
+---
+title: AWS EventBridge Scheduler backend
+description: Reconcile against EventBridge Schedules → cronix-trigger Lambda.
+---
 
-> **Status:** apply / plan / drift / list / prune work end-to-end against EventBridge Scheduler as of v0.6.0. `cronix history --backend aws-scheduler` returns nil — CloudWatch Logs Insights wiring is a follow-up. The Lambda trigger shim (the recommended target) is also a follow-up; see "Target shape" below.
+:::note[Status]
+`apply` / `plan` / `drift` / `list` / `prune` work end-to-end against EventBridge Scheduler as of v0.6.0. `cronix history --backend aws-scheduler` returns nil — CloudWatch Logs Insights wiring is a follow-up. The Lambda trigger shim (the recommended target) is also a follow-up; see "Target shape" below.
+:::
 
 ## Layout
 
