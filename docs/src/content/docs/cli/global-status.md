@@ -5,7 +5,7 @@ description: Read-only multi-backend aggregator that lists every cronix-owned en
 
 `global-status` reads an operator config file (`~/.cronix/config.yaml` or `/etc/cronix/config.yaml`) and queries `Backend.List()` on every configured backend in parallel. It's a stateless aggregator — backends remain the source of truth, no registry, no cache.
 
-This command does not compare against a manifest (that's [`cronix drift`](https://github.com/awbx/cronix/blob/main/PLAN.md)). It only answers: **"what does cronix currently own on this host?"**
+This command does not compare against a manifest — that's [`cronix drift`](/cronix/cli/drift/). It only answers: **"what does cronix currently own on this host?"**
 
 ## Quick example
 
