@@ -35,6 +35,9 @@ importers:
 
   examples/express-app:
     dependencies:
+      '@awbx/cronix-adapter-express':
+        specifier: workspace:*
+        version: link:../../packages/adapter-express
       '@awbx/cronix-sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -51,6 +54,9 @@ importers:
 
   examples/fastify-app:
     dependencies:
+      '@awbx/cronix-adapter-fastify':
+        specifier: workspace:*
+        version: link:../../packages/adapter-fastify
       '@awbx/cronix-sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -80,6 +86,51 @@ importers:
         specifier: ^4.20.6
         version: 4.21.0
 
+  packages/adapter-express:
+    dependencies:
+      '@awbx/cronix-sdk':
+        specifier: workspace:*
+        version: link:../sdk
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.25
+        version: 4.17.25
+      express:
+        specifier: ^4.22.1
+        version: 4.22.1
+
+  packages/adapter-fastify:
+    dependencies:
+      '@awbx/cronix-sdk':
+        specifier: workspace:*
+        version: link:../sdk
+    devDependencies:
+      fastify:
+        specifier: ^5.8.5
+        version: 5.8.5
+
+  packages/adapter-koa:
+    dependencies:
+      '@awbx/cronix-sdk':
+        specifier: workspace:*
+        version: link:../sdk
+    devDependencies:
+      '@types/koa':
+        specifier: ^3.0.2
+        version: 3.0.2
+      koa:
+        specifier: ^3.0.0
+        version: 3.2.0
+
+  packages/adapter-nest:
+    dependencies:
+      '@awbx/cronix-adapter-express':
+        specifier: workspace:*
+        version: link:../adapter-express
+      '@awbx/cronix-sdk':
+        specifier: workspace:*
+        version: link:../sdk
+
   packages/sdk:
     dependencies:
       cron-parser:
@@ -92,9 +143,6 @@ importers:
       '@types/express':
         specifier: ^4.17.25
         version: 4.17.25
-      '@types/koa':
-        specifier: ^3.0.2
-        version: 3.0.2
       express:
         specifier: ^4.22.1
         version: 4.22.1
@@ -104,9 +152,6 @@ importers:
       hono:
         specifier: ^4.12.16
         version: 4.12.16
-      koa:
-        specifier: ^3.0.0
-        version: 3.2.0
 
 packages:
 

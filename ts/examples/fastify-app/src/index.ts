@@ -1,5 +1,5 @@
+import { handle, rawBody } from "@awbx/cronix-adapter-fastify";
 import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
-import { handle, rawBody } from "@awbx/cronix-sdk/fastify";
 import Fastify from "fastify";
 
 type CronEnv = {

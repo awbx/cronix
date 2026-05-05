@@ -17,7 +17,7 @@ export type FetchHandler = (req: Request) => Response | Promise<Response>;
  * ```ts
  * import Koa from "koa";
  * import Router from "@koa/router";
- * import { handle } from "@awbx/cronix-sdk/koa";
+ * import { handle } from "@awbx/cronix-adapter-koa";
  * import { MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
  *
  * const app = new Koa();

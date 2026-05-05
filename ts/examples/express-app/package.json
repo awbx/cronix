@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@awbx/cronix-adapter-express": "workspace:*",
     "@awbx/cronix-sdk": "workspace:*",
     "express": "^4.21.2"
   },

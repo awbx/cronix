@@ -1,4 +1,4 @@
-import { type ExpressHandleOptions, handle as expressHandle, type FetchHandler } from "./express.js";
+import { type ExpressHandleOptions, handle as expressHandle, type FetchHandler } from "@awbx/cronix-adapter-express";
 
 export type { FetchHandler };
 export type NestHandleOptions = ExpressHandleOptions;
@@ -23,7 +23,7 @@ export type NestHandleOptions = ExpressHandleOptions;
  * Then either register cronix as Express middleware on the underlying app:
  *
  * ```ts
- * import { handle } from "@awbx/cronix-sdk/nest";
+ * import { handle } from "@awbx/cronix-adapter-nest";
  * import { MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
  *
  * app.use(MANIFEST_PATH, handle((req) => cron.handle(req)));
@@ -37,7 +37,7 @@ export type NestHandleOptions = ExpressHandleOptions;
  * ```ts
  * import { All, Controller, Next, Req, Res } from "@nestjs/common";
  * import type { NextFunction, Request, Response } from "express";
- * import { handle } from "@awbx/cronix-sdk/nest";
+ * import { handle } from "@awbx/cronix-adapter-nest";
  *
  * @Controller()
  * export class CronController {
@@ -49,7 +49,7 @@ export type NestHandleOptions = ExpressHandleOptions;
  * }
  * ```
  *
- * For NestFastify apps, use `@awbx/cronix-sdk/fastify` directly — the
+ * For NestFastify apps, use `@awbx/cronix-adapter-fastify` directly — the
  * underlying Fastify req/reply shapes match.
  */
 export const handle = expressHandle;
