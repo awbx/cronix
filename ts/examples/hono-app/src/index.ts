@@ -36,6 +36,28 @@ cron.register({
   },
 });
 
+cron.register({
+  name: "send-invoices",
+  schedule: "@hourly",
+  auth: { secret_refs: ["env:CRON_SECRET"] },
+  handler: async (ctx) => {
+    ctx.env.logger.info(`[cron] ${ctx.name} run=${ctx.runId} trace=${ctx.var.traceId}`);
+    await ctx.env.db.query("SELECT * FROM invoices WHERE status='pending'");
+    return { ok: true };
+  },
+});
+
+cron.register({
+  name: "nightly-rollup",
+  schedule: "@daily",
+  auth: { secret_refs: ["env:CRON_SECRET"] },
+  handler: async (ctx) => {
+    ctx.env.logger.info(`[cron] ${ctx.name} run=${ctx.runId} trace=${ctx.var.traceId}`);
+    await ctx.env.db.query("INSERT INTO daily_rollup ...");
+    return { ok: true };
+  },
+});
+
 const app = new Hono();
 
 app.all(MANIFEST_PATH, (c) => cron.handle(c.req.raw));
