@@ -13,6 +13,13 @@ on:
       - "**/*.md"
       - ".github/workflows/deploy-docs.yml"
 
+# Cancel an in-progress run when a new commit lands on the same ref
+# (PR head, feature branch, or main). Saves runner minutes when pushes
+# come back-to-back — common during rebase / amend / fix-the-build loops.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ts:
     name: TypeScript
