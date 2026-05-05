@@ -13,8 +13,8 @@
     "format": "biome format --write .",
     "gen:schema": "pnpm --filter @awbx/cronix-sdk run build && node scripts/gen-schema.mjs",
     "gen:auth-vectors": "pnpm --filter @awbx/cronix-sdk run build && node scripts/gen-auth-vectors.mjs",
-    "version:bump": "node scripts/bump-version.mjs",
-    "changelog": "node scripts/generate-changelog.mjs",
+    "version:bump": "node ../scripts/bump-version.mjs",
+    "changelog": "node ../scripts/generate-changelog.mjs",
     "prepare": "husky"
   },
   "keywords": [
