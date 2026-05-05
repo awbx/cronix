@@ -922,7 +922,7 @@ cronix drift --manifest ./manifest.json --backend crontab \
    `apply` is idempotent — no host-scheduler reload, no log churn when
    nothing has changed (D-027).
 
-See `docs/crontab.md` for the per-backend setup guide.
+See `docs/src/content/docs/backends/crontab.md` for the per-backend setup guide.
 
 ### Bare-metal — systemd-timer (v1)
 
@@ -931,7 +931,7 @@ rendering in v1; live reconciliation is a follow-up phase (PLAN.md
 §5c). Operators using systemd today can render the unit pair via the
 SDK and apply with `systemctl daemon-reload && systemctl enable --now`.
 
-See `docs/systemd.md`.
+See `docs/src/content/docs/backends/systemd.md`.
 
 ### Docker
 
@@ -953,7 +953,7 @@ phase (PLAN.md §5d). The pre-alpha Helm chart at
 RBAC, and an in-cluster `cronix apply` CronJob that reconciles a
 named manifest URL on a schedule.
 
-See `docs/kubernetes.md`.
+See `docs/src/content/docs/backends/kubernetes.md`.
 
 ### Distribution channels
 
