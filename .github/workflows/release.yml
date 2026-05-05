@@ -41,6 +41,10 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PAT with public_repo scope on awbx/homebrew-cronix.
+          # When unset, goreleaser still produces the formula locally
+          # but skips uploading — see brews.skip_upload in .goreleaser.yaml.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   npm:
     name: Publish TS packages to npm

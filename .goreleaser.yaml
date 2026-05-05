@@ -105,6 +105,31 @@ docker_manifests:
       - "docker.io/awbx/cronix:{{ .Version }}-amd64"
       - "docker.io/awbx/cronix:{{ .Version }}-arm64"
 
+brews:
+  - name: cronix
+    # Skip the brew step entirely when HOMEBREW_TAP_TOKEN isn't set,
+    # so the rest of the release (binaries, packages, docker) still
+    # ships even if the tap PAT hasn't been provisioned yet.
+    skip_upload: '{{ if eq .Env.HOMEBREW_TAP_TOKEN "" }}true{{ else }}false{{ end }}'
+    repository:
+      owner: awbx
+      name: homebrew-cronix
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_author:
+      name: cronix-release-bot
+      email: noreply@github.com
+    commit_msg_template: "cronix {{ .Tag }}"
+    directory: Formula
+    homepage: https://github.com/awbx/cronix
+    description: Cron jobs as code — reconcile app-declared schedules against the host scheduler
+    license: MIT
+    install: |
+      bin.install "cronix"
+      generate_completions_from_executable(bin/"cronix", "completion")
+    test: |
+      system "#{bin}/cronix", "version"
+
 changelog:
   sort: asc
   filters:
