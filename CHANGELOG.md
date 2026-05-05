@@ -2,6 +2,16 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see ts/scripts/generate-changelog.mjs.
 
+## [0.7.0] - 2026-05-05
+
+### Features
+
+- feat(cli): global-status aggregates owned entries across configured backends (`19fe917`)
+
+### Chores
+
+- chore(example): hono-app declares three scheduled jobs (`b5110aa`)
+
 ## [0.6.1] - 2026-05-05
 
 ### Refactors
