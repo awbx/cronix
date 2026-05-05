@@ -1,5 +1,5 @@
+import { handle } from "@awbx/cronix-adapter-express";
 import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
-import { handle } from "@awbx/cronix-sdk/express";
 import express from "express";
 
 type CronEnv = {
