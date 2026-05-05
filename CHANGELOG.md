@@ -2,6 +2,12 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.7.2] - 2026-05-05
+
+### Other
+
+- ci(release): generate Homebrew formula and push to awbx/homebrew-cronix tap (`59f6184`)
+
 ## [0.7.1] - 2026-05-05
 
 ### Refactors
