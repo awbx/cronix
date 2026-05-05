@@ -3,17 +3,17 @@
 // chore:, docs:) and groups them under the version they shipped in.
 //
 // Standalone:
-//   node ts/scripts/generate-changelog.mjs            # print to stdout
-//   node ts/scripts/generate-changelog.mjs --write    # write CHANGELOG.md
-//   node ts/scripts/generate-changelog.mjs 0.7.0 --write   # include pending v0.7.0 from HEAD
+//   node scripts/generate-changelog.mjs            # print to stdout
+//   node scripts/generate-changelog.mjs --write    # write CHANGELOG.md
+//   node scripts/generate-changelog.mjs 0.7.0 --write   # include pending v0.7.0 from HEAD
 //
-// Imported by ts/scripts/bump-version.mjs.
+// Imported by scripts/bump-version.mjs.
 
 import { execSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const repoRoot = new URL("../..", import.meta.url).pathname;
+const repoRoot = new URL("..", import.meta.url).pathname;
 const changelogPath = join(repoRoot, "CHANGELOG.md");
 
 /** Sorted descending: newest tag first. Filter to vX.Y.Z form. */
@@ -87,7 +87,7 @@ export function generateChangelog(newVersion) {
     }
   }
 
-  let md = "# Changelog\n\nAll notable changes to cronix are documented here. Generated from `git log`; see ts/scripts/generate-changelog.mjs.\n";
+  let md = "# Changelog\n\nAll notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.\n";
 
   for (const entry of entries) {
     md += `\n## [${entry.tag.replace(/^v/, "")}] - ${entry.date}\n`;
