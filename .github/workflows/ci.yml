@@ -20,6 +20,12 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Opt every JS-based action into Node 24 ahead of GitHub's June 2026
+# default flip — silences the Node-20-deprecation warning without waiting
+# for every action vendor to publish a v5/v6 with a new runtime.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   ts:
     name: TypeScript
