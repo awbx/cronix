@@ -3,44 +3,187 @@ title: cronix
 description: Cron jobs as code — reconcile app-declared schedules against the host's native scheduler.
 template: splash
 hero:
-  tagline: Cron jobs as code. Apps declare scheduled work in their own code; cronix reconciles those declarations against the host's native scheduler — crontab, systemd-timer, Kubernetes, or AWS EventBridge Scheduler.
+  tagline: Cron jobs as code. The schedule lives next to the handler — cronix reconciles it onto crontab, systemd-timer, Kubernetes, or AWS EventBridge.
   actions:
     - text: Quick start
       link: /cronix/quickstart/
       icon: right-arrow
       variant: primary
-    - text: Source on GitHub
+    - text: Install
+      link: /cronix/install/
+      icon: rocket
+      variant: secondary
+    - text: GitHub
       link: https://github.com/awbx/cronix
       icon: external
+      variant: minimal
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
+import { Card, CardGrid, LinkCard, Tabs, TabItem, Aside, Code } from "@astrojs/starlight/components";
 
-## Why cronix
+## Five seconds to a scheduled job
 
-Today the schedule for a job lives somewhere different from the code that handles it — in a UI, an EventBridge rule, a hand-edited crontab, a separate YAML repo. Changes require coordinating two places. Drift is invisible. Reviewers see the handler change but miss the schedule change.
+```ts
+import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
+import { Hono } from "hono";
 
-cronix puts the schedule next to the handler. Your app is the source of truth for its own schedules via a `/.well-known/cron-manifest` endpoint. `cronix apply` reconciles that manifest against whichever scheduler the host provides. The host scheduler does the firing. A small Go binary, `cronix trigger`, handles HMAC signing, concurrency locks, timeouts, and retries on every fire.
+const cron = createCron({ app: "billing", baseUrl: "https://billing.example.com", secret: process.env.CRON_SECRET! });
 
-The protocol is the product. The reconciler and SDKs are reference implementations.
+cron.register({
+  name: "reconcile-payments",
+  schedule: "*/15 * * * *",
+  auth: { secret_refs: ["env:CRON_SECRET"] },
+  handler: async (ctx) => { /* your work */ return { ok: true }; },
+});
 
-<CardGrid stagger>
-  <Card title="Install" icon="rocket">
-    Five paths — Homebrew, curl one-liner, deb / rpm / apk, `go install`, Docker. [Install →](/cronix/install/)
+const app = new Hono();
+app.all(MANIFEST_PATH, (c) => cron.handle(c.req.raw));
+app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) => cron.handle(c.req.raw));
+```
+
+Then from your laptop or CI:
+
+```bash
+cronix apply --manifest https://billing.example.com/.well-known/cron-manifest \
+  --backend crontab --crontab-path /etc/crontab \
+  --trigger-bin /usr/local/bin/cronix --secret-ref env:CRON_SECRET
+```
+
+That's it. Your `*/15 * * * *` line lives in your code; `cron(8)` actually fires it; `cronix trigger` signs the request and POSTs back to your handler with retries, locks, and HMAC.
+
+## Why it's different
+
+<CardGrid>
+  <Card title="Schedule lives with the handler" icon="pencil">
+    The cron expression is a property of the function it triggers, not a row in some other system. Reviewers see schedule changes in the same diff as code changes.
   </Card>
-  <Card title="Quick start" icon="open-book">
-    Wire the SDK into a Hono app, then reconcile from your laptop in under five minutes. [Quick start →](/cronix/quickstart/)
+  <Card title="Your app is the source of truth" icon="approve-check">
+    cronix reads your manifest at apply time and reconciles the host scheduler to match. Drift between what's declared and what's installed is detectable with one command.
   </Card>
-  <Card title="Backends" icon="setting">
-    crontab, systemd-timer, Kubernetes, AWS EventBridge Scheduler — all reconcile end-to-end. [Backends →](/cronix/backends/overview/)
+  <Card title="Native scheduler does the firing" icon="setting">
+    No background process, no broker. cron, systemd-timer, kubelet, EventBridge — whatever the host already runs — does the work. cronix only manages entries.
   </Card>
-  <Card title="RFC" icon="document">
-    The on-the-wire spec — manifest shape, HMAC signing, SDK contract, backend contract. [Read the RFC →](https://github.com/awbx/cronix/blob/main/spec/RFC.md)
+  <Card title="HMAC-signed every fire" icon="seti:lock">
+    Stripe-style signatures (timestamp + sha256) on every request. Constant-time verify. Multiple secrets supported for zero-downtime rotation.
+  </Card>
+  <Card title="Multi-backend" icon="puzzle">
+    crontab, systemd-timer, Kubernetes CronJob, AWS EventBridge Scheduler — same manifest, same signing contract, swap with one flag.
+  </Card>
+  <Card title="Polyglot from day one" icon="seti:typescript">
+    TypeScript SDK + Go SDK conformance-tested against shared spec vectors. Python, Ruby, and others welcome — the protocol is the product.
   </Card>
 </CardGrid>
 
-## Project status
+## How it works
 
-:::caution[Pre-alpha]
-APIs and on-the-wire shapes may still change. Don't run in production yet — but please try it and file issues.
+```
+              app (your service)
+              GET /.well-known/cron-manifest
+              POST /api/v1/scheduled/<name>
+                       │
+                       │ (1) read manifest
+                       ▼
+                cronix apply (Go)
+                       │
+                       │ (2) install/update/delete entries
+                       ▼
+              host scheduler (crontab / systemd / k8s CronJob / EventBridge)
+                       │
+                       │ (3) invoke on schedule
+                       ▼
+                cronix trigger (Go)
+                       │   • acquires lock
+                       │   • signs HMAC
+                       │   • POSTs to your handler
+                       │   • applies timeout + retries
+                       ▼
+                app handler (verifies signature, dedupes by run-id)
+```
+
+The protocol is the product. The reconciler and SDKs are reference implementations — anyone can ship a conforming SDK by passing the shared `manifest-vectors.json` and `auth-vectors.json`.
+
+## Install in one line
+
+<Tabs>
+  <TabItem label="Homebrew (macOS)" icon="apple">
+    ```bash
+    brew install awbx/cronix/cronix
+    ```
+  </TabItem>
+  <TabItem label="curl (Linux/macOS)" icon="linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh | sh
+    ```
+  </TabItem>
+  <TabItem label="Go" icon="seti:go">
+    ```bash
+    go install github.com/awbx/cronix/go/cmd/cronix@latest
+    ```
+  </TabItem>
+  <TabItem label="Docker" icon="seti:docker">
+    ```bash
+    docker pull awbx/cronix
+    ```
+  </TabItem>
+  <TabItem label="npm (SDK)" icon="seti:npm">
+    ```bash
+    pnpm add @awbx/cronix-sdk
+    ```
+  </TabItem>
+</Tabs>
+
+Full install matrix → [Install](/cronix/install/)
+
+## Pick a backend
+
+<CardGrid>
+  <LinkCard
+    title="crontab"
+    description="Reconcile against /etc/crontab. The simplest possible deployment — bare metal Linux or macOS, no daemon, no extra dependencies."
+    href="/cronix/backends/crontab/"
+  />
+  <LinkCard
+    title="systemd-timer"
+    description=".timer + .service unit pairs in /etc/systemd/system. Free journalctl integration, real Replace semantics, graceful enable/disable."
+    href="/cronix/backends/systemd/"
+  />
+  <LinkCard
+    title="Kubernetes"
+    description="CronJob + ConfigMap per (app, job, schedule). Reconciled directly via client-go; render-only YAML available for GitOps."
+    href="/cronix/backends/kubernetes/"
+  />
+  <LinkCard
+    title="AWS EventBridge Scheduler"
+    description="Schedules → cronix-trigger Lambda. Multi-account ready. No always-on host required."
+    href="/cronix/backends/aws/"
+  />
+</CardGrid>
+
+## Status
+
+:::caution[Pre-alpha — try it, file issues, don't run in production]
+v0.7.x is the current line. The on-the-wire spec is frozen, the four backends reconcile end-to-end, and the TypeScript + Go SDKs are conformance-tested. APIs may still evolve before v1.0.
 :::
+
+<CardGrid>
+  <LinkCard
+    title="Read the RFC"
+    description="The protocol — manifest shape, HMAC signing, SDK contract, backend contract. The source of truth."
+    href="https://github.com/awbx/cronix/blob/main/spec/RFC.md"
+  />
+  <LinkCard
+    title="Browse runnable examples"
+    description="Hono, Express, Fastify, hand-rolled, Go — each ~50 lines with a curl recipe to test end-to-end."
+    href="https://github.com/awbx/cronix/tree/main/ts/examples"
+  />
+  <LinkCard
+    title="Contribute"
+    description="MIT licensed. File an issue, add a missing example stack, or port the SDK to a new language. The conformance vectors are your green-light test suite."
+    href="https://github.com/awbx/cronix/blob/main/CONTRIBUTING.md"
+  />
+  <LinkCard
+    title="Project plan"
+    description="Implementation roadmap, decision log (D-001…D-029), and open questions for the next phase."
+    href="https://github.com/awbx/cronix/blob/main/PLAN.md"
+  />
+</CardGrid>
