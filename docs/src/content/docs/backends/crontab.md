@@ -5,7 +5,7 @@ description: Reconcile against /etc/crontab — the simplest possible deployment
 
 The crontab backend writes 2-line owned blocks to a single crontab file:
 
-```cron
+```bash
 */15 * * * * /usr/local/bin/cronix trigger billing.reconcile-payments
 # cronix:owned app=billing job=reconcile-payments hash=abc123def idx=0
 ```

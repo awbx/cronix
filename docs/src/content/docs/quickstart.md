@@ -56,7 +56,7 @@ cronix apply \
 
 The crontab now contains:
 
-```cron
+```bash
 */15 * * * * /usr/local/bin/cronix trigger billing-service.reconcile-payments
 # cronix:owned app=billing-service job=reconcile-payments hash=eefe2dd0dcf563e2 idx=0
 ```
