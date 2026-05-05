@@ -15,7 +15,7 @@ export type ExpressHandleOptions = {
  * `Response` back to the Express reply.
  *
  * ```ts
- * import { handle } from "@awbx/cronix-sdk/express";
+ * import { handle } from "@awbx/cronix-adapter-express";
  *
  * app.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
  * app.all(`${TRIGGER_PATH_PREFIX}:name`, handle((req) =>

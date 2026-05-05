@@ -9,7 +9,7 @@ export type FetchHandler = (req: Request) => Response | Promise<Response>;
  * registering any cronix routes.
  *
  * ```ts
- * import { handle, rawBody } from "@awbx/cronix-sdk/fastify";
+ * import { handle, rawBody } from "@awbx/cronix-adapter-fastify";
  *
  * const app = Fastify();
  * rawBody(app);

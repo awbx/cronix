@@ -1,7 +1,7 @@
 {
-  "name": "@awbx/cronix-sdk",
+  "name": "@awbx/cronix-adapter-fastify",
   "version": "0.6.0",
-  "description": "App-side SDK for cronix: declare cron jobs in code, build the manifest, verify signed triggers. Framework-agnostic — works with anything that exposes a Web Request (Hono, Bun, Workers, Vercel) or via a sister adapter package for Express / Fastify / Koa / NestJS.",
+  "description": "Fastify adapter for @awbx/cronix-sdk. Lifts cron.handle into a Fastify route handler with a raw-body content-type parser for HMAC verification.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -32,27 +32,24 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/awbx/cronix.git",
-    "directory": "ts/packages/sdk"
+    "directory": "ts/packages/adapter-fastify"
   },
   "publishConfig": {
     "access": "public"
   },
   "keywords": [
-    "cron",
-    "scheduler",
     "cronix",
-    "typescript",
-    "hmac",
-    "manifest"
+    "cron",
+    "fastify",
+    "adapter"
   ],
   "dependencies": {
-    "cron-parser": "^5.5.0",
-    "zod": "^4.4.3"
+    "@awbx/cronix-sdk": "workspace:*"
+  },
+  "peerDependencies": {
+    "fastify": ">=4"
   },
   "devDependencies": {
-    "@types/express": "^4.17.25",
-    "express": "^4.22.1",
-    "fastify": "^5.8.5",
-    "hono": "^4.12.16"
+    "fastify": "^5.8.5"
   }
 }

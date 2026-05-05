@@ -43,7 +43,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   npm:
-    name: Publish @awbx/cronix-sdk to npm
+    name: Publish TS packages to npm
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,17 +59,25 @@ jobs:
       - name: Install
         working-directory: ts
         run: pnpm install --frozen-lockfile
-      - name: Set package version from tag
-        working-directory: ts/packages/sdk
+      - name: Set version on all packages from tag
+        working-directory: ts
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          echo "Publishing @awbx/cronix-sdk@${VERSION}"
-          pnpm version "${VERSION}" --no-git-tag-version --allow-same-version
-      - name: Build
-        working-directory: ts/packages/sdk
+          echo "Publishing all @awbx/cronix-* packages at ${VERSION}"
+          for dir in packages/sdk packages/adapter-express packages/adapter-fastify packages/adapter-koa packages/adapter-nest; do
+            (cd "$dir" && pnpm version "${VERSION}" --no-git-tag-version --allow-same-version --workspaces-update=false)
+          done
+      - name: Build all packages
+        working-directory: ts
         run: pnpm build
-      - name: Publish
-        working-directory: ts/packages/sdk
-        run: pnpm publish --access public --no-git-checks
+      - name: Publish in dependency order
+        working-directory: ts
+        run: |
+          # sdk first (no internal deps), then framework adapters, then nest (depends on adapter-express).
+          for dir in packages/sdk packages/adapter-express packages/adapter-fastify packages/adapter-koa packages/adapter-nest; do
+            echo "::group::publish $dir"
+            (cd "$dir" && pnpm publish --access public --no-git-checks)
+            echo "::endgroup::"
+          done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
