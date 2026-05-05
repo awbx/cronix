@@ -2,6 +2,23 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.7.3] - 2026-05-05
+
+### Docs
+
+- docs(landing): code-first hero, feature grid, install tabs, backend cards (`e2a526a`)
+- docs: scaffold Astro Starlight site under docs/ + GitHub Pages deploy (`504c0c4`)
+- docs(readme): refocus on OSS positioning, install paths, and examples (`05675ee`)
+
+### Chores
+
+- chore(changelog): regenerate after history rewrite (`d386751`)
+
+### Other
+
+- ci: skip CI on docs-only changes (`ce7095e`)
+- ci(docs): pin pnpm@10.33.0 in docs/package.json (`2f2ef11`)
+
 ## [0.7.2] - 2026-05-05
 
 ### Other
