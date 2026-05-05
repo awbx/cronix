@@ -1,6 +1,11 @@
-# Backend: systemd-timer
+---
+title: systemd-timer backend
+description: Reconcile against systemd .timer / .service unit pairs.
+---
 
-> **Status:** stable as of v0.3.0. `cronix apply --backend systemd-timer` writes unit files and drives `systemctl daemon-reload` / `enable --now` / `disable --now` via the `SystemctlExecutor` interface. Render-only output (`RenderUnits`) is still available for operators who prefer to install units by hand.
+:::note[Status]
+Stable as of v0.3.0. `cronix apply --backend systemd-timer` writes unit files and drives `systemctl daemon-reload` / `enable --now` / `disable --now` via the `SystemctlExecutor` interface. Render-only output (`RenderUnits`) is still available for operators who prefer to install units by hand.
+:::
 
 ## Layout
 
@@ -60,8 +65,6 @@ sudo systemctl enable --now cronix-billing-<jobname>-0.timer
 Run `systemd-analyze calendar "<expr>"` to verify a translated expression in your systemd version.
 
 ## Run history
-
-Until `cronix history` ships, use:
 
 ```bash
 journalctl -u cronix-billing-<jobname>-0.service --output=json --since=24h

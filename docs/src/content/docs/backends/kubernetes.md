@@ -1,6 +1,11 @@
-# Backend: kubernetes
+---
+title: Kubernetes backend
+description: Reconcile against CronJob + ConfigMap pairs in any Kubernetes cluster.
+---
 
-> **Status:** stable as of v0.3.0. `cronix apply --backend kubernetes` reconciles directly against the API server via `client-go`. Render-only YAML output is still available for operators who prefer `kubectl apply -f`.
+:::note[Status]
+Stable as of v0.3.0. `cronix apply --backend kubernetes` reconciles directly against the API server via `client-go`. Render-only YAML output is still available for operators who prefer `kubectl apply -f`.
+:::
 
 ## Layout
 
@@ -28,7 +33,7 @@ cronix apply \
   --manifest ./billing.cronix.json \
   --backend kubernetes \
   --k8s-namespace billing \
-  --k8s-image awbx/cronix:v0.3.0
+  --k8s-image awbx/cronix:v0.7.2
 ```
 
 Out-of-cluster runs use `--kubeconfig <path>` (or `KUBECONFIG` env / `~/.kube/config`). When running cronix itself inside a pod, pass `--in-cluster`.
@@ -43,7 +48,7 @@ Operators preferring GitOps-style YAML can still render the resources without in
 import "github.com/awbx/cronix/go/internal/backends/kubernetes"
 
 yaml, err := kubernetes.RenderManifest(
-    "awbx/cronix:v0.3.0",
+    "awbx/cronix:v0.7.2",
     "billing",          // namespace
     "billing",          // app
     job,                // a manifest.NormalizedJob
@@ -59,15 +64,13 @@ echo "$yaml" | kubectl apply -f -
 
 ## Image
 
-`awbx/cronix:<version>` is `FROM gcr.io/distroless/static`, ~20 MB, multi-arch (amd64/arm64). Built and pushed by goreleaser on every `v*` tag.
+`awbx/cronix:<version>` is `FROM gcr.io/distroless/static`, ~20 MB, multi-arch (amd64/arm64). Built and pushed by goreleaser to both DockerHub and GHCR on every `v*` tag.
 
 ## Concurrency
 
 The CronJob spec sets `concurrencyPolicy: Forbid` and `backoffLimit: 0` — defense in depth. The shim is still the authoritative concurrency enforcer (D-028); K8s preventing duplicate Pods catches misconfigurations early.
 
 ## Run history
-
-Until `cronix history` ships, use:
 
 ```bash
 kubectl -n billing get jobs -l cronix.dev/job=reconcile --sort-by=.status.startTime
