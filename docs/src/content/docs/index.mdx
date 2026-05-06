@@ -3,7 +3,7 @@ title: cronix
 description: Cron jobs as code — your handler is the source of truth, reconciled across crontab, systemd-timer, Kubernetes, and AWS EventBridge.
 template: splash
 hero:
-  tagline: Your handler IS the schedule. One manifest, four backends, one CLI to keep them in sync.
+  tagline: Cron jobs as code. Your handler IS the schedule. One manifest, four backends, one CLI to keep them in sync.
   image:
     alt: cronix
     file: ../../assets/cronix-mark.svg
@@ -24,7 +24,7 @@ hero:
 
 import { Card, CardGrid, LinkCard, Tabs, TabItem, Aside } from "@astrojs/starlight/components";
 
-<div style="margin: 1rem 0 3rem; border-radius: 16px; overflow: hidden; border: 1px solid var(--sl-color-gray-5); box-shadow: 0 30px 60px -20px rgba(139, 92, 246, 0.25);">
+<div style="margin: 1.5rem 0 2.5rem; border-radius: 14px; overflow: hidden; border: 1px solid var(--sl-color-gray-5); box-shadow: 0 30px 60px -25px rgba(139, 92, 246, 0.35);">
   <video
     controls
     autoplay
@@ -34,7 +34,7 @@ import { Card, CardGrid, LinkCard, Tabs, TabItem, Aside } from "@astrojs/starlig
     preload="metadata"
     style="display: block; width: 100%; background: #0b0d14;"
   >
-    <source src="https://github.com/user-attachments/assets/7506551d-4c2c-4d8a-ac61-9b6a8a0e4d55" type="video/mp4" />
+    <source src="https://github.com/user-attachments/assets/cf642aa2-67db-4b34-9ce7-6bf9ece5a5ab" type="video/mp4" />
     Your browser does not support the video tag.
   </video>
 </div>
@@ -45,7 +45,7 @@ Today, "I need a scheduled job" has three answers — none of them give you the 
 
 <CardGrid>
   <Card title="In-app queue · BullMQ / Agenda" icon="warning">
-    A Redis-backed queue plus a worker. Needs Redis ops. Repeats stack on every restart. Schedule lives in code **and** in Redis.
+    Redis-backed queue plus a worker. Needs Redis ops. Repeats stack on every restart. Schedule lives in code **and** in Redis.
   </Card>
   <Card title="In-process · node-cron / cron" icon="warning">
     Stops the moment the process exits. Each replica fires it — N pods → N runs. No audit log, no retries, no concurrency guard.
@@ -55,7 +55,7 @@ Today, "I need a scheduled job" has three answers — none of them give you the 
   </Card>
 </CardGrid>
 
-> Whichever one you pick, you can't answer: *"Is this running anywhere right now? Who changed the schedule? Did the last run succeed?"*
+> Whichever you pick, you can't answer: *"Is this running anywhere right now? Who changed the schedule? Did the last run succeed?"*
 
 ---
 
@@ -109,7 +109,7 @@ Reviewers see schedule changes in the same diff as the code change.
     cronix reads your manifest at apply time and reconciles the host scheduler to match. Drift between *declared* and *installed* is one command away.
   </Card>
   <Card title="Native scheduler does the firing" icon="setting">
-    No background process, no broker, no Redis. cron, systemd-timer, kubelet, EventBridge — whatever the host already runs — does the work. cronix only manages entries.
+    No background process, no broker, no Redis. cron, systemd-timer, kubelet, EventBridge — whatever the host already runs — does the work.
   </Card>
   <Card title="HMAC-signed every fire" icon="seti:lock">
     Stripe-style signatures (timestamp + sha256) on every request. Constant-time verify. Multiple secrets supported for zero-downtime rotation.
@@ -194,7 +194,7 @@ v0.7.x is the current line. The on-the-wire spec is stable, the four backends re
 <CardGrid>
   <LinkCard
     title="Read the RFC"
-    description="The protocol — manifest shape, HMAC signing, SDK contract, backend contract. The source of truth."
+    description="The protocol — manifest shape, HMAC signing, SDK contract, backend contract."
     href="https://github.com/awbx/cronix/blob/main/spec/RFC.md"
   />
   <LinkCard
@@ -204,7 +204,7 @@ v0.7.x is the current line. The on-the-wire spec is stable, the four backends re
   />
   <LinkCard
     title="Contribute"
-    description="MIT licensed. File an issue, add a missing example stack, or port the SDK to a new language. The conformance vectors are your green-light test suite."
+    description="MIT licensed. File an issue, add a missing example stack, or port the SDK to a new language."
     href="https://github.com/awbx/cronix/blob/main/CONTRIBUTING.md"
   />
   <LinkCard
