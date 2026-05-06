@@ -1,24 +1,47 @@
-# cronix
+<p align="center">
+  <img src="docs/public/cronix-mark.svg" alt="cronix" width="120" />
+</p>
 
-[![npm version](https://img.shields.io/npm/v/@awbx/cronix-sdk.svg?label=%40awbx%2Fcronix-sdk)](https://www.npmjs.com/package/@awbx/cronix-sdk)
-[![Go Reference](https://pkg.go.dev/badge/github.com/awbx/cronix/go.svg)](https://pkg.go.dev/github.com/awbx/cronix/go)
-[![CI](https://github.com/awbx/cronix/actions/workflows/ci.yml/badge.svg)](https://github.com/awbx/cronix/actions/workflows/ci.yml)
-[![Release](https://github.com/awbx/cronix/actions/workflows/release.yml/badge.svg)](https://github.com/awbx/cronix/actions/workflows/release.yml)
-[![License](https://img.shields.io/npm/l/@awbx/cronix-sdk.svg)](./LICENSE)
+<h1 align="center">cronix</h1>
 
+<p align="center"><strong>Cron jobs as code.</strong> Your handler is the source of truth — cronix reconciles it onto <code>crontab</code>, <code>systemd-timer</code>, Kubernetes, or AWS EventBridge.</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@awbx/cronix-sdk"><img src="https://img.shields.io/npm/v/@awbx/cronix-sdk.svg?label=%40awbx%2Fcronix-sdk" alt="npm version" /></a>
+  <a href="https://pkg.go.dev/github.com/awbx/cronix/go"><img src="https://pkg.go.dev/badge/github.com/awbx/cronix/go.svg" alt="Go Reference" /></a>
+  <a href="https://github.com/awbx/cronix/actions/workflows/ci.yml"><img src="https://github.com/awbx/cronix/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/awbx/cronix/actions/workflows/release.yml"><img src="https://github.com/awbx/cronix/actions/workflows/release.yml/badge.svg" alt="Release" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/npm/l/@awbx/cronix-sdk.svg" alt="License" /></a>
+</p>
+
+<p align="center">
+  <a href="https://awbx.github.io/cronix/"><strong>Docs</strong></a> ·
+  <a href="https://awbx.github.io/cronix/quickstart/"><strong>Quick start</strong></a> ·
+  <a href="./spec/RFC.md"><strong>RFC</strong></a> ·
+  <a href="./ts/examples/"><strong>Examples</strong></a>
+</p>
+
+---
 
 https://github.com/user-attachments/assets/7506551d-4c2c-4d8a-ac61-9b6a8a0e4d55
 
-
-> **Cron jobs as code.** Apps declare scheduled work in their own code; cronix reconciles those declarations against the host's native scheduler — `crontab`, `systemd-timer`, Kubernetes, or AWS EventBridge Scheduler.
+---
 
 > ⚠️ **Under active development.** The on-the-wire spec is stable; APIs may evolve before v1.0. Try it and file issues.
 
-## Why
+## The problem
 
-Today the schedule for a job lives somewhere different from the code that handles it — in a UI, an EventBridge rule, a hand-edited crontab, a separate YAML repo. Changes require coordinating two places. Drift is invisible. Reviewers see the handler change but miss the schedule change.
+Today, "I need a scheduled job" has three answers — none of them tell you the whole picture:
 
-`cronix` puts the schedule next to the handler. Your app is the source of truth for its own schedules via a `/.well-known/cron-manifest` endpoint. `cronix apply` reconciles that manifest against whichever scheduler the host provides. The host scheduler does the firing. A small Go binary, `cronix trigger`, handles HMAC signing, concurrency locks, timeouts, and retries on every fire.
+- 🟧 **In-app queue** (BullMQ / Agenda) — needs Redis ops, repeats stack on restart, schedule lives in code *and* in Redis.
+- 🟧 **In-process** (node-cron / cron) — stops with the process, every replica fires it (N pods → N runs), no audit, no retries.
+- 🟧 **Host scheduler** (crontab / systemd / k8s) — per-machine install, ssh-edit drift, no who-changed-what audit, silent failures.
+
+Whichever you pick, you can't answer: *is this running anywhere right now? who changed the schedule? did the last run succeed?*
+
+## The flip
+
+`cronix` puts the schedule next to the handler. Your app's `/.well-known/cron-manifest` endpoint is the source of truth. `cronix apply` reconciles it against whichever scheduler the host provides. The host scheduler does the firing. A small Go binary, `cronix trigger`, handles HMAC signing, concurrency locks, timeouts, and retries on every fire.
 
 The protocol is the product. The reconciler and SDKs are reference implementations.
 
@@ -75,7 +98,7 @@ go get github.com/awbx/cronix/go/pkg/cronsdk
 ## Quick start (TypeScript + Hono)
 
 ```ts
-import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
+import { createCron } from "@awbx/cronix-sdk";
 import { Hono } from "hono";
 
 const cron = createCron({
@@ -86,8 +109,7 @@ const cron = createCron({
 
 cron.register({
   name: "reconcile-payments",
-  schedule: "*/15 * * * *",
-  auth: { secret_refs: ["env:CRON_SECRET"] },
+  schedule: "*/15 * * * *", // ← lives next to the handler
   handler: async (ctx) => {
     console.log(`fired ${ctx.name} run=${ctx.runId}`);
     // your work here
@@ -96,8 +118,8 @@ cron.register({
 });
 
 const app = new Hono();
-app.all(MANIFEST_PATH, (c) => cron.handle(c.req.raw));
-app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) => cron.handle(c.req.raw));
+app.all("/.well-known/cron-manifest", (c) => cron.handle(c.req.raw));
+app.all("/api/v1/scheduled/:name", (c) => cron.handle(c.req.raw));
 
 export default app;
 ```
@@ -129,32 +151,6 @@ Runnable mini-apps, each one ~50 lines:
 
 Each example has a README with the exact `pnpm dev` (or `go run`) command and a curl recipe to test end-to-end.
 
-## How it works
-
-```
-              app (your service)
-              GET /.well-known/cron-manifest
-              POST /api/v1/scheduled/<name>
-                       │
-                       │ (1) read manifest
-                       ▼
-                cronix apply (Go)
-                       │
-                       │ (2) install/update/delete entries
-                       ▼
-              host scheduler (crontab / systemd / k8s CronJob / EventBridge)
-                       │
-                       │ (3) invoke on schedule
-                       ▼
-                cronix trigger (Go)
-                       │   • acquires lock
-                       │   • signs HMAC (Stripe-style)
-                       │   • POSTs to your handler
-                       │   • applies timeout + retries
-                       ▼
-                app handler (verifies signature, dedupes by run-id)
-```
-
 ## Backends
 
 | Backend | What it writes | Setup |
@@ -173,20 +169,20 @@ For frameworks that don't speak Web Fetch natively, install the matching sibling
 ```ts
 // Express
 import { handle } from "@awbx/cronix-adapter-express";
-app.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
+app.all("/.well-known/cron-manifest", handle((req) => cron.handle(req)));
 
 // Fastify (rawBody installs a wildcard parser to keep bytes-as-sent)
 import { handle, rawBody } from "@awbx/cronix-adapter-fastify";
 rawBody(app);
-app.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
+app.all("/.well-known/cron-manifest", handle((req) => cron.handle(req)));
 
 // Koa (mount before any body-parser middleware)
 import { handle } from "@awbx/cronix-adapter-koa";
-router.all(MANIFEST_PATH, handle((req) => cron.handle(req)));
+router.all("/.well-known/cron-manifest", handle((req) => cron.handle(req)));
 
 // NestJS (Express by default — bootstrap with `bodyParser: false`)
 import { handle } from "@awbx/cronix-adapter-nest";
-app.use(MANIFEST_PATH, handle((req) => cron.handle(req)));
+app.use("/.well-known/cron-manifest", handle((req) => cron.handle(req)));
 ```
 
 Hono, Bun, Workers, Vercel/Next.js, and Deno all serve a Web `Request` natively — no adapter needed; just call `cron.handle(req)` directly from your route.

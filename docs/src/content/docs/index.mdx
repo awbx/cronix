@@ -1,9 +1,12 @@
 ---
 title: cronix
-description: Cron jobs as code — reconcile app-declared schedules against the host's native scheduler.
+description: Cron jobs as code — your handler is the source of truth, reconciled across crontab, systemd-timer, Kubernetes, and AWS EventBridge.
 template: splash
 hero:
-  tagline: Cron jobs as code. The schedule lives next to the handler — cronix reconciles it onto crontab, systemd-timer, Kubernetes, or AWS EventBridge.
+  tagline: Your handler IS the schedule. One manifest, four backends, one CLI to keep them in sync.
+  image:
+    alt: cronix
+    file: ../../assets/cronix-mark.svg
   actions:
     - text: Quick start
       link: /cronix/quickstart/
@@ -19,29 +22,72 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid, LinkCard, Tabs, TabItem, Aside, Code } from "@astrojs/starlight/components";
+import { Card, CardGrid, LinkCard, Tabs, TabItem, Aside } from "@astrojs/starlight/components";
 
-## Five seconds to a scheduled job
+<div style="margin: 1rem 0 3rem; border-radius: 16px; overflow: hidden; border: 1px solid var(--sl-color-gray-5); box-shadow: 0 30px 60px -20px rgba(139, 92, 246, 0.25);">
+  <video
+    controls
+    autoplay
+    muted
+    loop
+    playsinline
+    preload="metadata"
+    style="display: block; width: 100%; background: #0b0d14;"
+  >
+    <source src="https://github.com/user-attachments/assets/7506551d-4c2c-4d8a-ac61-9b6a8a0e4d55" type="video/mp4" />
+    Your browser does not support the video tag.
+  </video>
+</div>
+
+## The problem
+
+Today, "I need a scheduled job" has three answers — none of them give you the whole picture.
+
+<CardGrid>
+  <Card title="In-app queue · BullMQ / Agenda" icon="warning">
+    A Redis-backed queue plus a worker. Needs Redis ops. Repeats stack on every restart. Schedule lives in code **and** in Redis.
+  </Card>
+  <Card title="In-process · node-cron / cron" icon="warning">
+    Stops the moment the process exits. Each replica fires it — N pods → N runs. No audit log, no retries, no concurrency guard.
+  </Card>
+  <Card title="Host scheduler · crontab + systemd + k8s" icon="warning">
+    Per-machine install. ssh-edit drift across hosts. No who-changed-what audit. Silent failures — *did it actually run?*
+  </Card>
+</CardGrid>
+
+> Whichever one you pick, you can't answer: *"Is this running anywhere right now? Who changed the schedule? Did the last run succeed?"*
+
+---
+
+## The flip
+
+Cronix puts the schedule next to the handler. Your code is the truth. `git log` is your audit log.
 
 ```ts
-import { createCron, MANIFEST_PATH, TRIGGER_PATH_PREFIX } from "@awbx/cronix-sdk";
+import { createCron } from "@awbx/cronix-sdk";
 import { Hono } from "hono";
 
-const cron = createCron({ app: "billing", baseUrl: "https://billing.example.com", secret: process.env.CRON_SECRET! });
+const cron = createCron({
+  app: "billing-service",
+  baseUrl: "https://billing.example.com",
+  secret: process.env.CRON_SECRET!,
+});
 
 cron.register({
   name: "reconcile-payments",
-  schedule: "*/15 * * * *",
-  auth: { secret_refs: ["env:CRON_SECRET"] },
-  handler: async (ctx) => { /* your work */ return { ok: true }; },
+  schedule: "*/15 * * * *", // ← lives next to the handler
+  handler: async (ctx) => {
+    await reconcilePayments();
+    return { ok: true };
+  },
 });
 
 const app = new Hono();
-app.all(MANIFEST_PATH, (c) => cron.handle(c.req.raw));
-app.all(`${TRIGGER_PATH_PREFIX}:name`, (c) => cron.handle(c.req.raw));
+app.all("/.well-known/cron-manifest", (c) => cron.handle(c.req.raw));
+app.all("/api/v1/scheduled/:name", (c) => cron.handle(c.req.raw));
 ```
 
-Then from your laptop or CI:
+Then, from your laptop or CI:
 
 ```bash
 cronix apply --manifest https://billing.example.com/.well-known/cron-manifest \
@@ -49,24 +95,26 @@ cronix apply --manifest https://billing.example.com/.well-known/cron-manifest \
   --trigger-bin /usr/local/bin/cronix --secret-ref env:CRON_SECRET
 ```
 
-That's it. Your `*/15 * * * *` line lives in your code; `cron(8)` actually fires it; `cronix trigger` signs the request and POSTs back to your handler with retries, locks, and HMAC.
+Reviewers see schedule changes in the same diff as the code change.
+
+---
 
 ## Why it's different
 
 <CardGrid>
   <Card title="Schedule lives with the handler" icon="pencil">
-    The cron expression is a property of the function it triggers, not a row in some other system. Reviewers see schedule changes in the same diff as code changes.
+    The cron expression is a property of the function it triggers, not a row in some other system. Reviewers see the schedule change in the same diff as the code change.
   </Card>
   <Card title="Your app is the source of truth" icon="approve-check">
-    cronix reads your manifest at apply time and reconciles the host scheduler to match. Drift between what's declared and what's installed is detectable with one command.
+    cronix reads your manifest at apply time and reconciles the host scheduler to match. Drift between *declared* and *installed* is one command away.
   </Card>
   <Card title="Native scheduler does the firing" icon="setting">
-    No background process, no broker. cron, systemd-timer, kubelet, EventBridge — whatever the host already runs — does the work. cronix only manages entries.
+    No background process, no broker, no Redis. cron, systemd-timer, kubelet, EventBridge — whatever the host already runs — does the work. cronix only manages entries.
   </Card>
   <Card title="HMAC-signed every fire" icon="seti:lock">
     Stripe-style signatures (timestamp + sha256) on every request. Constant-time verify. Multiple secrets supported for zero-downtime rotation.
   </Card>
-  <Card title="Multi-backend" icon="puzzle">
+  <Card title="Multi-backend, one contract" icon="puzzle">
     crontab, systemd-timer, Kubernetes CronJob, AWS EventBridge Scheduler — same manifest, same signing contract, swap with one flag.
   </Card>
   <Card title="Polyglot from day one" icon="seti:typescript">
@@ -74,33 +122,34 @@ That's it. Your `*/15 * * * *` line lives in your code; `cron(8)` actually fires
   </Card>
 </CardGrid>
 
-## How it works
+---
 
-```
-              app (your service)
-              GET /.well-known/cron-manifest
-              POST /api/v1/scheduled/<name>
-                       │
-                       │ (1) read manifest
-                       ▼
-                cronix apply (Go)
-                       │
-                       │ (2) install/update/delete entries
-                       ▼
-              host scheduler (crontab / systemd / k8s CronJob / EventBridge)
-                       │
-                       │ (3) invoke on schedule
-                       ▼
-                cronix trigger (Go)
-                       │   • acquires lock
-                       │   • signs HMAC
-                       │   • POSTs to your handler
-                       │   • applies timeout + retries
-                       ▼
-                app handler (verifies signature, dedupes by run-id)
-```
+## Pick a backend
 
-The protocol is the product. The reconciler and SDKs are reference implementations — anyone can ship a conforming SDK by passing the shared `manifest-vectors.json` and `auth-vectors.json`.
+<CardGrid>
+  <LinkCard
+    title="crontab"
+    description="Reconcile against /etc/crontab. Bare metal Linux or macOS — no daemon, no extra dependencies."
+    href="/cronix/backends/crontab/"
+  />
+  <LinkCard
+    title="systemd-timer"
+    description=".timer + .service unit pairs in /etc/systemd/system. Free journalctl integration, real Replace semantics, graceful enable/disable."
+    href="/cronix/backends/systemd/"
+  />
+  <LinkCard
+    title="Kubernetes"
+    description="CronJob + ConfigMap per (app, job, schedule). Reconciled directly via client-go; render-only YAML available for GitOps."
+    href="/cronix/backends/kubernetes/"
+  />
+  <LinkCard
+    title="AWS EventBridge Scheduler"
+    description="Schedules → cronix-trigger Lambda. Multi-account ready. No always-on host required."
+    href="/cronix/backends/aws/"
+  />
+</CardGrid>
+
+---
 
 ## Install in one line
 
@@ -134,36 +183,13 @@ The protocol is the product. The reconciler and SDKs are reference implementatio
 
 Full install matrix → [Install](/cronix/install/)
 
-## Pick a backend
-
-<CardGrid>
-  <LinkCard
-    title="crontab"
-    description="Reconcile against /etc/crontab. The simplest possible deployment — bare metal Linux or macOS, no daemon, no extra dependencies."
-    href="/cronix/backends/crontab/"
-  />
-  <LinkCard
-    title="systemd-timer"
-    description=".timer + .service unit pairs in /etc/systemd/system. Free journalctl integration, real Replace semantics, graceful enable/disable."
-    href="/cronix/backends/systemd/"
-  />
-  <LinkCard
-    title="Kubernetes"
-    description="CronJob + ConfigMap per (app, job, schedule). Reconciled directly via client-go; render-only YAML available for GitOps."
-    href="/cronix/backends/kubernetes/"
-  />
-  <LinkCard
-    title="AWS EventBridge Scheduler"
-    description="Schedules → cronix-trigger Lambda. Multi-account ready. No always-on host required."
-    href="/cronix/backends/aws/"
-  />
-</CardGrid>
+---
 
 ## Status
 
-:::caution[Under active development]
+<Aside type="caution" title="Under active development">
 v0.7.x is the current line. The on-the-wire spec is stable, the four backends reconcile end-to-end, and the TypeScript + Go SDKs are conformance-tested. APIs may still evolve before v1.0.
-:::
+</Aside>
 
 <CardGrid>
   <LinkCard
