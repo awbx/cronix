@@ -505,8 +505,8 @@ The function:
    `MissingSignature` (HTTP 401).
 2. Resolves the configured secrets (the user passes a string, an array,
    or a function returning either).
-3. Calls the language's HMAC verifier (Phase 2 contract). Failures
-   surface the underlying error code:
+3. Calls the language's HMAC verifier per the §Authentication rules.
+   Failures surface the underlying error code:
    - `MalformedHeader` → 401
    - `StaleTimestamp` → 401
    - `SignatureMismatch` → 401
@@ -550,9 +550,9 @@ trigger dispatch, tampered body, unknown job).
 Any SDK in any language passes:
 
 1. `spec/manifest-vectors.json` against its `parseManifest` /
-   `applyDefaults` / `canonicalize` implementations (Phase 1 contract).
-2. `spec/auth-vectors.json` against its `sign` / `verify` (Phase 2
-   contract).
+   `applyDefaults` / `canonicalize` implementations (per §The Manifest).
+2. `spec/auth-vectors.json` against its `sign` / `verify` (per
+   §Authentication).
 3. The behavioral test set from §SDK Contract: the same scenarios
    exercised by the reference TS integration suite, applicable to any
    HTTP framework.
@@ -644,7 +644,7 @@ Cross-host concurrent applies are out of scope for v1 (Limitation 6).
 
 ### Drift
 
-`cronix drift` (Phase 6) reports entries whose installed `hash` no longer
+`cronix drift` reports entries whose installed `hash` no longer
 matches what the current manifest would produce. Drift MAY arise from:
 
 - An operator hand-edited an owned entry. cronix flags but does not auto-
@@ -656,13 +656,13 @@ matches what the current manifest would produce. Drift MAY arise from:
 ### Backend interface
 
 The Go `Backend` interface (`go/internal/backends/backend.go`) is the
-language-neutral contract for any host-scheduler adapter. Phase 5
-ships the three v1 backends; the contract is stable from v1 onward so
-community contributions for additional backends become possible.
+language-neutral contract for any host-scheduler adapter. v1 ships
+four backends; the contract is stable from v1 onward so community
+contributions for additional backends become possible.
 
 ### Locking primitives
 
-The trigger shim (Phase 5a) uses the `Lock` interface
+The trigger shim uses the `Lock` interface
 (`go/internal/locks/lock.go`) to enforce per-job `concurrency` and
 `concurrency_scope` (D-009 / D-010). Two implementations ship in v1:
 
@@ -771,15 +771,15 @@ at every fire. Its full per-fire lifecycle:
    - `Forbid`: try-acquire with TTL = `timeout_seconds + 30s`. On
      contention, exit `ExitLockContended` (4) with a structured log.
    - `Replace`: in v1, behaves as `Forbid` and logs the intent
-     (the SIGTERM-the-previous-holder path is deferred — see PLAN.md).
+     (the SIGTERM-the-previous-holder path is deferred to a follow-up version).
 6. **Per-attempt loop** (1..`policy.retries.max_attempts`):
    1. Build the HTTP request with `policy.timeout_seconds` enforced
       via `context.WithTimeout`.
    2. Inject `X-Cron-*` headers: `Run-Id`, `Schedule-Name`,
       `Fire-Time` (intended), `Fire-Time-Actual`, `Attempt`,
       `Previous-Success-Time` (when known).
-   3. Sign per Phase 2 auth using the first resolved secret (verifier
-      accepts any of the listed secrets per D-019).
+   3. Sign per the §Authentication rules using the first resolved secret
+      (verifier accepts any of the listed secrets per D-019).
    4. Send. On 2xx: success → `ExitOK` (0). On 4xx: app rejected →
       `ExitAppRejected` (1), do not retry. On 5xx / network /
       timeout: log and continue.
@@ -809,7 +809,7 @@ contention" and operators are free to use either.
 
 The shim emits structured logs to stdout (JSON via stdlib `log/slog`
 with `JSONHandler`) and errors to stderr. Every log line carries
-`app`, `job`, `run_id`. Phase 5 wires the additional emitters:
+`app`, `job`, `run_id`. v1 wires these additional emitters:
 
 - Under K8s (`KUBERNETES_SERVICE_HOST` env set), terminal outcomes
   also post K8s `Event` records.
@@ -824,25 +824,25 @@ Apps logging at the receiver side should include the inbound
 `cronix` is a single binary with subcommands. The reconciler-side surface
 is operator-friendly: idempotent `apply`, dry-run `plan`, drift detection,
 read-only `list` and `validate`. The trigger shim is the same binary's
-`trigger` subcommand (Phase 5).
+`trigger` subcommand.
 
 ### Subcommands (v1)
 
 | Command | Purpose |
 |---|---|
+| `cronix init` | Interactive scaffold for a new operator config. |
 | `cronix validate <source>` | Lint a manifest from a file path or signed HTTPS URL. No side effects. |
 | `cronix plan` (alias `diff`) | Show what `apply` would change. Equivalent to `apply --dry-run`. |
 | `cronix apply` | Reconcile a manifest against the host scheduler. Writes per-job spec files for the trigger shim. |
 | `cronix list` | List cronix-owned entries currently installed in the backend. |
+| `cronix show <app>.<name>` | Detailed view of one owned entry (state, schedule, ownership marker). |
 | `cronix drift` | Report entries whose installed state diverges from the manifest. With `--exit-on-drift`, exits 5 when drift is detected. |
-| `cronix trigger <app>.<job>` | Per-fire executor invoked by the host scheduler (Phase 5). |
+| `cronix global-status` | Cross-backend snapshot — owned / in-sync / drifted counts per backend. |
+| `cronix prune` | Remove all owned entries (with confirmation; `--yes` to skip). |
+| `cronix history <app>.<name>` | Aggregated backend-native run records (journalctl / kubectl / CloudWatch). |
+| `cronix trigger <app>.<job>` | Per-fire executor invoked by the host scheduler. |
 | `cronix version` | Version, build, and target platform info. |
 | `cronix completion <bash\|zsh\|fish\|powershell>` | Emit a shell completion script. |
-
-Deferred to a follow-up phase (PLAN.md §Phase 6 covers the full surface):
-`init` (interactive config scaffold), `show <app>.<name>` (detailed view),
-`prune` (remove all owned entries with confirmation), `history` (aggregated
-backend-native run records).
 
 ### Cross-cutting behavior
 
@@ -853,8 +853,9 @@ backend-native run records).
   `file://`, `https://`, or `http://localhost`/`127.0.0.1` for dev.
   HTTPS sources require `--secret-ref` (one or more) for the signed GET.
 - **Backend selection**: `--backend crontab|systemd-timer|kubernetes`.
-  In v1 only `crontab` supports the full reconciliation cycle; the other
-  two are render-only (PLAN.md §5c, §5d).
+  In v1 `crontab` and `aws-scheduler` support the full reconciliation
+  cycle; `systemd-timer` and `kubernetes` are render-only (live
+  reconciliation deferred to a follow-up).
 - **Trigger spec writeout**: `cronix apply --spec-dir /etc/cronix/jobs`
   writes one `<app>.<job>.json` per job into the shim's spec directory.
 
@@ -869,8 +870,8 @@ backend-native run records).
 | 4 | (reserved for auth failure on manifest fetch) |
 | 5 | drift detected (only when `drift --exit-on-drift` is set) |
 
-The trigger shim has its own exit-code map (Phase 5 §Trigger Shim
-Behavior); the two are kept disjoint where overlap would be confusing.
+The trigger shim has its own exit-code map (see §Trigger Shim Behavior
+in this RFC); the two are kept disjoint where overlap would be confusing.
 
 ### Quickstart
 
@@ -927,8 +928,8 @@ See `docs/src/content/docs/backends/crontab.md` for the per-backend setup guide.
 ### Bare-metal — systemd-timer (v1)
 
 The `systemd-timer` backend ships with `Validate` and unit-file
-rendering in v1; live reconciliation is a follow-up phase (PLAN.md
-§5c). Operators using systemd today can render the unit pair via the
+rendering in v1; live reconciliation is deferred to a follow-up
+version. Operators using systemd today can render the unit pair via the
 SDK and apply with `systemctl daemon-reload && systemctl enable --now`.
 
 See `docs/src/content/docs/backends/systemd.md`.
@@ -947,8 +948,8 @@ docker run --rm ghcr.io/awbx/cronix:latest version
 ### Kubernetes
 
 The `kubernetes` backend ships with `Validate` and CronJob+ConfigMap
-YAML rendering in v1; live `client-go` reconciliation is a follow-up
-phase (PLAN.md §5d). The pre-alpha Helm chart at
+YAML rendering in v1; live `client-go` reconciliation is deferred to a
+follow-up version. The pre-alpha Helm chart at
 `deploy/helm/cronix/` provisions the cronix image, ServiceAccount,
 RBAC, and an in-cluster `cronix apply` CronJob that reconciles a
 named manifest URL on a schedule.
@@ -981,7 +982,7 @@ See `docs/src/content/docs/backends/kubernetes.md`.
   a new policy vocabulary.
 - **systemd `OnCalendar=`.** The systemd-timer backend translates 5-field
   cron expressions into systemd's calendar event syntax via
-  `systemd-analyze calendar` (Phase 5c).
+  `systemd-analyze calendar`.
 - **Vercel/Cloudflare Cron.** Both products allow declaring cron jobs in
   application config. cronix's manifest-served-by-the-app pattern is in
   the same family; the difference is reconciliation against a host-managed
@@ -996,82 +997,50 @@ See `docs/src/content/docs/backends/kubernetes.md`.
 
 ## Changelog
 
-- **2026-05-04 — Phase 7.** Polish: public Go SDK at
-  `go/pkg/cronsdk` (HMAC `Verify` + `VerifyHTTP` convenience + X-Cron-*
-  header constants, re-exporting from internal/auth and
-  internal/headers, with conformance against the same auth-vectors).
-  Runnable Go example at `go/examples/go-app`. Per-backend setup guides
-  at `docs/{crontab,systemd,kubernetes}.md`. `CONTRIBUTING.md` and
-  `SECURITY.md`. Pre-alpha Helm chart at `deploy/helm/cronix/` —
-  ServiceAccount + RBAC + an optional `cronix apply` CronJob. RFC
-  §Deployment (bare-metal crontab/systemd, Docker, Kubernetes,
-  distribution-channel matrix). Status promoted from Draft to "Stable
-  for v1 (release candidate)".
-- **2026-05-04 — Phase 6.** CLI subcommands: `validate`, `plan`/`diff`,
-  `apply`, `list`, `drift`, `completion` (in addition to `version` from
-  Phase 0 and `trigger` from Phase 5). Stable JSON output via `-o json`
-  for CI integration. Manifest sources: local path, `file://`,
-  `https://`, `http://localhost`. The `drift --exit-on-drift` flag
-  surfaces exit code 5. Apply writes per-job trigger spec files into
-  `--spec-dir`. 9 CLI integration tests exercise the full operator
-  workflow: validate-OK / validate-rejects / apply-create / apply-noop /
-  apply-update / list / drift-noop / plan-shows-update / completion.
-  RFC §CLI populated.
-- **2026-05-04 — Phase 5.** Trigger shim (`internal/trigger`) — full
-  per-fire lifecycle: spec load, secret resolve, lock acquire, signed
-  HTTP with timeout + retries + backoff, panic recovery, structured
-  JSON logs, exit-code map. Crontab backend (`internal/backends/crontab`)
-  with 2-line owned blocks and ownership-marker preservation. Reconciler
-  (`internal/reconcile`) with Plan/Apply/Diff/Drift; deletes-then-
-  updates-then-creates ordering; IsNoop() for the idempotent CI path.
-  Skeletons for systemd-timer and kubernetes backends (unit-file and
-  CronJob YAML rendering + Validate; List/Create/Update/Delete deferred
-  to a follow-up phase per PLAN §5c, §5d). `cronix trigger <app>.<job>`
-  wired as the second cobra subcommand. RFC sections populated:
-  Backend Adapter Contract (Go interface, ownership/multi-schedule/
-  idempotency contract), Backend Fidelity Matrix (capability table
-  across the three v1 backends), Trigger Shim Behavior (lifecycle,
-  exit codes, observability).
-- **2026-05-04 — Phase 4.** Go core libraries: `Backend` interface
-  (`internal/backends/backend.go`) for host-scheduler adapters with
-  ManagedEntry/ValidationResult/HistoryOpts/HistoryEntry types; `Lock`
-  interface (`internal/locks/lock.go`) plus `flock` and `redis`
-  implementations (the latter tested under miniredis with TTL fencing,
-  exclusive-acquisition, late-release-of-stale-token scenarios); operator
-  config schema (`internal/config`) with strict unknown-field rejection,
-  secret-ref syntax (env:/file:/raw:), and HTTPS-by-default URL
-  validation. RFC §Reconciliation Model populated: ownership tracking
-  per backend (D-026), state table, idempotency contract (D-027),
-  concurrency safety, drift semantics.
-- **2026-05-04 — Phase 3.** TypeScript SDK runtime: `createCron(...)`
-  exposing `register`, `manifest`, `verify`. The SDK is framework-
-  agnostic — no Express/Fastify/Hono adapter packages (deviation from
-  PLAN.md §3 Tasks). Three runnable examples (`examples/express-app`,
-  `examples/fastify-app`, `examples/hono-app`) demonstrate the wiring
-  in ~30 lines of glue each. Parameterized integration tests under
-  `ts/packages/sdk/test/integration.test.ts` boot all three frameworks
-  in-process and exercise signed-manifest fetch, missing signature,
-  signed trigger dispatch, tampered body, and unknown job. RFC §SDK
-  Contract populated as the language-neutral behavioral spec.
-- **2026-05-04 — Phase 2.** HMAC-SHA256 sign/verify implemented in
-  `@awbx/cronix-sdk` (Web Crypto API) and `internal/auth` (`crypto/hmac` +
-  `crypto/subtle`). 35 conformance vectors at `spec/auth-vectors.json`
-  cover happy path, malformed headers, replay window, tampered fields,
-  and multi-secret rotation. CI greps for loose-comparison adjacent to
-  HMAC values in both languages and runs the TS conformance suite under
-  Bun in addition to Node 20+22. RFC §Authentication populated with
-  threat model, signed-payload construction, header format, replay
-  window, comparison rules, and rotation guidance.
-- **2026-05-04 — Phase 1.** Manifest specification, Zod schema in
-  `@awbx/cronix-sdk` and Go mirror in `internal/manifest`, conformance vectors
-  at `spec/manifest-vectors.json` (29 cases), generated JSON Schema at
-  `spec/manifest.schema.json`. Both implementations pass all vectors and
-  agree byte-for-byte on canonicalized output.
-- **2026-05-04 — Phase 0.** Repository scaffolding only. No product code.
-  Locked decisions D-001 through D-029 captured in DECISIONS.md. Repo
-  layout deviates from `PLAN.md` §6: a polyglot top-level (`spec/`,
-  `ts/`, `go/`) replaces the original Go-at-root + TS-in-`packages/`
-  design. The deviation is recorded as D-029.
+### v1.0.0-rc.1 — 2026-05
+
+The on-the-wire contract is frozen. Every protocol surface is specified
+in this document and exercised by the conformance vectors at
+`spec/manifest-vectors.json` (29 cases) and `spec/auth-vectors.json` (35
+cases). The TypeScript SDK (`@awbx/cronix-sdk`) and the Go reference
+(`internal/manifest`, `internal/auth`) pass both vector suites byte-for-
+byte; CI gates against any regression.
+
+**What v1 covers:**
+
+- **Manifest** — JSON shape, JSON Schema (`spec/manifest.schema.json`),
+  normalization rules, schedule syntax (POSIX cron + `@hourly` /
+  `@daily` / `@weekly` aliases + IANA timezone).
+- **Authentication** — HMAC-SHA256 over `t.METHOD.path.body`,
+  `cronix-signature: t=…,v1=…` header, ±5 min replay window,
+  constant-time verification, multi-secret rotation. CI greps for
+  loose-comparison adjacent to HMAC values in both languages.
+- **SDK contract** — `createCron(...)` exposing `register` / `manifest`
+  / `verify`. Framework-agnostic core with thin adapters for Hono,
+  Express, Fastify, Koa, and Nest.
+- **Reconciliation model** — ownership tracking per backend (D-026),
+  state table, idempotency contract (D-027), drift semantics, and the
+  delete-then-update-then-create apply ordering.
+- **Backends** — `crontab` (full lifecycle, owned-block markers),
+  `aws-scheduler` (full lifecycle via EventBridge Scheduler),
+  `systemd-timer` (`Validate` + unit-file render in v1; live
+  reconciliation deferred), `kubernetes` (`Validate` + CronJob YAML
+  render in v1; live `client-go` reconciliation deferred).
+- **Trigger shim** — per-fire lifecycle: spec load, secret resolve,
+  lock acquire (`flock` or `redis`), signed HTTP with timeout /
+  retries / backoff, panic recovery, structured JSON logs, dedicated
+  exit-code map.
+- **CLI** — `init`, `validate`, `plan` / `diff`, `apply`, `list`,
+  `show`, `drift`, `global-status`, `prune`, `history`, `trigger`,
+  `version`, `completion`. Stable `-o json` output for CI integration.
+- **Distribution** — Homebrew tap, deb / rpm / apk packages, Docker
+  image, npm SDK, pre-alpha Helm chart at `deploy/helm/cronix/`.
+
+**Deferred to follow-up versions:** live `client-go` integration for
+the `kubernetes` backend, live `systemctl` / `journalctl` shell-out for
+the `systemd-timer` backend, persistent run-history for `cronix
+history`, the SIGTERM-the-previous-holder path for the `Replace`
+concurrency policy, and graduating the Helm chart from pre-alpha.
 
 ## Open Questions
 
