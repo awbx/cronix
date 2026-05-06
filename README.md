@@ -6,6 +6,10 @@
 [![Release](https://github.com/awbx/cronix/actions/workflows/release.yml/badge.svg)](https://github.com/awbx/cronix/actions/workflows/release.yml)
 [![License](https://img.shields.io/npm/l/@awbx/cronix-sdk.svg)](./LICENSE)
 
+
+https://github.com/user-attachments/assets/7506551d-4c2c-4d8a-ac61-9b6a8a0e4d55
+
+
 > **Cron jobs as code.** Apps declare scheduled work in their own code; cronix reconciles those declarations against the host's native scheduler — `crontab`, `systemd-timer`, Kubernetes, or AWS EventBridge Scheduler.
 
 > ⚠️ **Under active development.** The on-the-wire spec is stable; APIs may evolve before v1.0. Try it and file issues.
