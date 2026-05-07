@@ -13,15 +13,27 @@ import (
 )
 
 func newPruneCmd() *cobra.Command {
+	cmd := buildPruneVariant("prune", bindBackendFlags, "")
+	addBackendSubcommands(cmd, func(name string, bind func(*cobra.Command, *backendOpts)) *cobra.Command {
+		return buildPruneVariant(name, bind, name)
+	})
+	return cmd
+}
+
+func buildPruneVariant(use string, bindBE func(*cobra.Command, *backendOpts), forcedBackend string) *cobra.Command {
 	var (
 		bopts   backendOpts
 		appOnly string
 		yes     bool
 		output  string
 	)
+	short := "Remove all cronix-owned entries from the backend"
+	if forcedBackend != "" {
+		short = fmt.Sprintf("Remove all cronix-owned entries from the %s backend", forcedBackend)
+	}
 	cmd := &cobra.Command{
-		Use:   "prune",
-		Short: "Remove all cronix-owned entries from the backend",
+		Use:   use,
+		Short: short,
 		Long: `prune lists every entry the configured backend reports as cronix-owned
 and deletes them. With --app, only entries belonging to that app are pruned.
 
@@ -29,6 +41,9 @@ Destructive — the backend's Delete is invoked for every owned (app, job) pair.
 Defaults to interactive confirmation; pass --yes to skip the prompt (suitable
 for CI uninstalls).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if forcedBackend != "" {
+				bopts.name = forcedBackend
+			}
 			ctx := cmd.Context()
 			b, err := buildBackend(bopts)
 			if err != nil {
@@ -56,7 +71,7 @@ for CI uninstalls).`,
 			return printPruneResult(cmd, output, b.Name(), len(matched), deleted)
 		},
 	}
-	bindBackendFlags(cmd, &bopts)
+	bindBE(cmd, &bopts)
 	cmd.Flags().StringVar(&appOnly, "app", "", "limit pruning to entries belonging to this app")
 	cmd.Flags().BoolVar(&yes, "yes", false, "skip the interactive confirmation prompt")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output format: table|json")

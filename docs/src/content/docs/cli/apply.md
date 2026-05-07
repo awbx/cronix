@@ -10,8 +10,10 @@ description: Reconcile a manifest against the configured host scheduler — crea
 ## Synopsis
 
 ```
-cronix apply --manifest <source> [flags]
+cronix apply [BACKEND] --manifest <source> [flags]
 ```
+
+`BACKEND` is optional and selects one of `crontab`, `systemd-timer`, `kubernetes`, `aws-scheduler`, or `vercel` as a sub-subcommand. When omitted, `--backend` is used (legacy form). See [backend flags](/cronix/cli/backend-flags/) for the two equivalent shapes.
 
 `<source>` is one of:
 
@@ -26,27 +28,28 @@ cronix apply --manifest <source> [flags]
 |---|---|---|
 | `--manifest` | (required) | Manifest source — see above |
 | `--secret-ref` (repeatable) | (none) | `env:NAME`, `file:/path`, or `raw:literal`. Required for `https://` sources; forwarded into per-job spec files for the trigger shim |
-| `--spec-dir` | `/etc/cronix/jobs` | Where to write the per-job spec files the trigger shim reads at fire time. Ignored for `--backend kubernetes` (specs live in a sibling ConfigMap) |
+| `--spec-dir` | `/etc/cronix/jobs` | Where to write the per-job spec files the trigger shim reads at fire time. Ignored for `kubernetes` (specs live in a sibling ConfigMap) |
 | `--dry-run` | `false` | Compute and print the Plan but do not execute it (equivalent to `cronix plan`) |
 | `-o, --output` | `table` | Output format: `table` or `json` |
 
-Plus all [backend flags](/cronix/cli/backend-flags/) — `--backend`, `--crontab-path`, `--trigger-bin`, `--systemd-unit-dir`, `--k8s-namespace`, `--k8s-image`, `--kubeconfig`, `--in-cluster`, `--aws-region`, `--aws-schedule-group`, `--aws-target-arn`, `--aws-role-arn`.
+Plus the [backend flags](/cronix/cli/backend-flags/) for the chosen backend. The sub-subcommand form (`cronix apply kubernetes ...`) only exposes that backend's flags in `--help` and shell completion; the legacy form (`cronix apply --backend kubernetes ...`) exposes the union for backwards compatibility.
 
 ## Examples
 
 Reconcile a local manifest into the system crontab:
 
 ```bash
-cronix apply --manifest ./billing.cronix.json \
-  --crontab-path /tmp/cronix.crontab \
-  --trigger-bin /usr/local/bin/cronix
+cronix apply crontab \
+  --manifest ./billing.cronix.json \
+  --crontab-path /tmp/cronix.crontab
 # Apply: backend=crontab created=2 updated=0 deleted=0 skipped=0
 ```
 
 Re-run with no changes — note the noop result:
 
 ```bash
-cronix apply --manifest ./billing.cronix.json \
+cronix apply crontab \
+  --manifest ./billing.cronix.json \
   --crontab-path /tmp/cronix.crontab
 # Apply: noop (nothing to change)
 ```
@@ -54,11 +57,20 @@ cronix apply --manifest ./billing.cronix.json \
 Fetch from HTTPS and reconcile into Kubernetes:
 
 ```bash
-cronix apply \
+cronix apply kubernetes \
   --manifest https://billing.example.com/.well-known/cron-manifest \
   --secret-ref env:CRON_SECRET \
-  --backend kubernetes --in-cluster --k8s-namespace billing \
+  --in-cluster --k8s-namespace billing \
   --output json
+```
+
+The legacy form is still accepted:
+
+```bash
+cronix apply --backend kubernetes \
+  --manifest https://billing.example.com/.well-known/cron-manifest \
+  --secret-ref env:CRON_SECRET \
+  --in-cluster --k8s-namespace billing
 ```
 
 ## Notes

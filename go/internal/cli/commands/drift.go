@@ -1,12 +1,22 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/awbx/cronix/go/internal/reconcile"
 )
 
 func newDriftCmd() *cobra.Command {
+	cmd := buildDriftVariant("drift", bindBackendFlags, "")
+	addBackendSubcommands(cmd, func(name string, bind func(*cobra.Command, *backendOpts)) *cobra.Command {
+		return buildDriftVariant(name, bind, name)
+	})
+	return cmd
+}
+
+func buildDriftVariant(use string, bindBE func(*cobra.Command, *backendOpts), forcedBackend string) *cobra.Command {
 	var (
 		manifestSource string
 		secretRefs     []string
@@ -14,9 +24,13 @@ func newDriftCmd() *cobra.Command {
 		output         string
 		exitOnDrift    bool
 	)
+	short := "Report entries whose installed state diverges from the manifest"
+	if forcedBackend != "" {
+		short = fmt.Sprintf("Report drift between the manifest and the %s backend", forcedBackend)
+	}
 	cmd := &cobra.Command{
-		Use:   "drift",
-		Short: "Report entries whose installed state diverges from the manifest",
+		Use:   use,
+		Short: short,
 		Long: `drift reads the manifest and the backend's current state, then prints
 the operations apply would perform to bring the backend into agreement.
 
@@ -24,6 +38,9 @@ With --exit-on-drift, exits non-zero (5) when any drift is detected — useful
 in CI to fail builds whose deployed cron state has drifted from the source
 of truth.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if forcedBackend != "" {
+				bopts.name = forcedBackend
+			}
 			ctx := cmd.Context()
 			normalized, err := loadAndNormalize(ctx, manifestSource, secretRefs)
 			if err != nil {
@@ -50,7 +67,7 @@ of truth.`,
 	cmd.Flags().StringVar(&manifestSource, "manifest", "", "manifest source — required")
 	_ = cmd.MarkFlagRequired("manifest")
 	cmd.Flags().StringSliceVar(&secretRefs, "secret-ref", nil, "secret_ref for HTTPS manifest fetches")
-	bindBackendFlags(cmd, &bopts)
+	bindBE(cmd, &bopts)
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output format: table|json")
 	cmd.Flags().BoolVar(&exitOnDrift, "exit-on-drift", false, "exit 5 when drift is detected")
 	return cmd

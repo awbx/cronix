@@ -7,14 +7,40 @@ The seven mutating-or-reading commands that talk to a single backend — [`apply
 
 [`global-status`](/cronix/cli/global-status/) does not use these flags. It loads backends from `~/.cronix/cronix.yaml` so it can query several at once.
 
-## Picking a backend
+## Two ways to pick a backend
+
+Each of the seven commands accepts the backend in two equivalent shapes:
+
+```bash
+# A. Legacy: --backend on the top-level command (everything-shown).
+cronix apply --backend kubernetes --k8s-namespace billing --manifest ./m.json
+
+# B. Sub-subcommand: kubectl-style. --help and shell completion only
+#    list the flags relevant to the chosen backend.
+cronix apply kubernetes --k8s-namespace billing --manifest ./m.json
+```
+
+Both produce identical behavior. **B is the recommended form** — the focused flag set makes `--help` short and shell completion (Bash, Zsh, fish, PowerShell) suggest only relevant flags. **A is preserved for backwards compatibility** so existing scripts and CI configurations keep working.
+
+The pattern applies to every backend-aware command:
+
+```bash
+cronix plan vercel --manifest ./m.json --vercel-json-path ./vercel.json
+cronix drift systemd-timer --manifest ./m.json --systemd-unit-dir /etc/systemd/system
+cronix list crontab --crontab-path /etc/crontab
+cronix show kubernetes billing.reconcile --k8s-namespace billing
+cronix prune aws-scheduler --aws-region us-east-1 --yes
+cronix history systemd-timer billing.reconcile --since 24h
+```
+
+## Picking a backend (legacy form)
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--backend` | `crontab` | Which host scheduler to drive: `crontab`, `systemd-timer`, `kubernetes`, or `aws-scheduler` |
+| `--backend` | `crontab` | Which host scheduler to drive: `crontab`, `systemd-timer`, `kubernetes`, `aws-scheduler`, or `vercel`. Required only on the legacy form (A); the sub-subcommand form (B) hardcodes it |
 | `--trigger-bin` | `/usr/local/bin/cronix` | Absolute path to the cronix binary on the host (the schedule entry runs `<trigger-bin> trigger <app>.<job>`) |
 
-`--trigger-bin` is read by every host-side backend (crontab, systemd-timer). The Kubernetes backend ignores it — the in-cluster image entrypoint runs `cronix trigger` instead.
+`--trigger-bin` is read by every host-side backend (crontab, systemd-timer). Kubernetes, aws-scheduler, and vercel ignore it — Kubernetes uses the in-cluster image entrypoint; aws-scheduler points at the cronix-trigger Lambda; Vercel fires routes directly.
 
 ## crontab
 
@@ -54,6 +80,15 @@ cronix-owned objects carry an `app.kubernetes.io/managed-by: cronix` label and a
 
 The schedule's `Input` field carries the full job spec inline (no S3 round-trip), and the schedule is tagged `cronix:owner=cronix` so `list` can find it again.
 
+## vercel
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--vercel-json-path` | `./vercel.json` | Path to the `vercel.json` file the backend rewrites |
+| `--vercel-trigger-prefix` | `/api/v1/scheduled/` | Path prefix that identifies cronix-owned entries inside `crons[]`. Override only when you've changed the SDK's default trigger mount path |
+
+Cronix-owned entries in `crons[]` round-trip cleanly; non-cronix entries and every other top-level key in `vercel.json` are preserved byte-for-byte.
+
 ## Auth and secrets
 
 | Flag | Default | Purpose |
@@ -64,22 +99,37 @@ The schedule's `Input` field carries the full job spec inline (no S3 round-trip)
 
 ## Examples
 
+Sub-subcommand form (recommended):
+
 ```bash
 # Crontab on a laptop, non-system path
-cronix apply --manifest ./billing.cronix.json \
-  --crontab-path /var/at/tabs/me \
-  --trigger-bin /usr/local/bin/cronix
+cronix apply crontab \
+  --manifest ./billing.cronix.json \
+  --crontab-path /var/at/tabs/me
 
 # Kubernetes via in-cluster service account
-cronix apply --manifest https://billing.example.com/.well-known/cron-manifest \
+cronix apply kubernetes \
+  --manifest https://billing.example.com/.well-known/cron-manifest \
   --secret-ref env:CRON_SECRET \
-  --backend kubernetes --in-cluster --k8s-namespace billing
+  --in-cluster --k8s-namespace billing
 
 # EventBridge Scheduler
-cronix apply --manifest ./billing.cronix.json \
-  --backend aws-scheduler \
+cronix apply aws-scheduler \
+  --manifest ./billing.cronix.json \
   --aws-region us-east-1 \
   --aws-schedule-group cronix \
   --aws-target-arn arn:aws:lambda:us-east-1:123:function:cronix-trigger \
   --aws-role-arn arn:aws:iam::123:role/cronix-eventbridge
+
+# Vercel — rewrites vercel.json crons[] in place
+cronix apply vercel \
+  --manifest ./billing.cronix.json \
+  --vercel-json-path ./vercel.json
+```
+
+Legacy form (still supported):
+
+```bash
+cronix apply --manifest ./billing.cronix.json \
+  --backend kubernetes --in-cluster --k8s-namespace billing
 ```

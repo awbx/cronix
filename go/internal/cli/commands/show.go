@@ -13,15 +13,27 @@ import (
 )
 
 func newShowCmd() *cobra.Command {
+	cmd := buildShowVariant("show <app>.<job>", bindBackendFlags, "")
+	addBackendSubcommands(cmd, func(name string, bind func(*cobra.Command, *backendOpts)) *cobra.Command {
+		return buildShowVariant(name+" <app>.<job>", bind, name)
+	})
+	return cmd
+}
+
+func buildShowVariant(use string, bindBE func(*cobra.Command, *backendOpts), forcedBackend string) *cobra.Command {
 	var (
 		bopts          backendOpts
 		manifestSource string
 		secretRefs     []string
 		output         string
 	)
+	short := "Inspect one cronix-managed job"
+	if forcedBackend != "" {
+		short = fmt.Sprintf("Inspect one cronix-managed job in the %s backend", forcedBackend)
+	}
 	cmd := &cobra.Command{
-		Use:   "show <app>.<job>",
-		Short: "Inspect one cronix-managed job",
+		Use:   use,
+		Short: short,
 		Long: `show prints the backend's current state for a single (app, job) pair —
 schedules, hashes, and per-index entries. With --manifest, the desired spec
 is loaded and printed alongside, with an in-sync / drifted indicator
@@ -30,9 +42,13 @@ computed from the same hash the reconciler uses.
 Examples:
   cronix show billing.reconcile
   cronix show billing.reconcile --backend kubernetes --k8s-namespace billing
+  cronix show kubernetes billing.reconcile --k8s-namespace billing
   cronix show billing.reconcile --manifest ./billing.cronix.json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if forcedBackend != "" {
+				bopts.name = forcedBackend
+			}
 			ctx := cmd.Context()
 			app, job, ok := splitAppJob(args[0])
 			if !ok {
@@ -71,7 +87,7 @@ Examples:
 			return printShow(cmd, output, b.Name(), app, job, desired, matched)
 		},
 	}
-	bindBackendFlags(cmd, &bopts)
+	bindBE(cmd, &bopts)
 	cmd.Flags().StringVar(&manifestSource, "manifest", "", "manifest source — when set, desired spec is shown and drift is reported")
 	cmd.Flags().StringSliceVar(&secretRefs, "secret-ref", nil, "secret_ref for HTTPS manifest fetches")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output format: table|json")

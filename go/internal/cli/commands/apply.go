@@ -42,26 +42,21 @@ type backendOpts struct {
 	secretRefs        []string
 }
 
-// bindBackendFlags wires the backend-selection flags shared by apply,
-// plan, drift, and list onto the given cobra Command.
-func bindBackendFlags(cmd *cobra.Command, opts *backendOpts) {
-	cmd.Flags().StringVar(&opts.name, "backend", "crontab", "host scheduler backend (crontab|systemd-timer|kubernetes|aws-scheduler|vercel)")
-	cmd.Flags().StringVar(&opts.crontabPath, "crontab-path", "/etc/crontab", "crontab file (when --backend=crontab)")
-	cmd.Flags().StringVar(&opts.triggerBin, "trigger-bin", "/usr/local/bin/cronix", "absolute path to the cronix binary on the host")
-	cmd.Flags().StringVar(&opts.systemdDir, "systemd-unit-dir", "/etc/systemd/system", "directory for owned timer/service unit files (when --backend=systemd-timer)")
-	cmd.Flags().StringVar(&opts.k8sNamespace, "k8s-namespace", "default", "namespace for owned CronJobs/ConfigMaps (when --backend=kubernetes)")
-	cmd.Flags().StringVar(&opts.k8sImage, "k8s-image", "awbx/cronix:latest", "cronix container image used by the CronJob pod (when --backend=kubernetes)")
-	cmd.Flags().StringVar(&opts.k8sKubeconfig, "kubeconfig", "", "path to kubeconfig (defaults to KUBECONFIG / ~/.kube/config / in-cluster)")
-	cmd.Flags().BoolVar(&opts.k8sInCluster, "in-cluster", false, "load API config from the in-cluster service account (when --backend=kubernetes)")
-	cmd.Flags().StringVar(&opts.awsRegion, "aws-region", "", "AWS region (when --backend=aws-scheduler; defaults to SDK chain)")
-	cmd.Flags().StringVar(&opts.awsScheduleGroup, "aws-schedule-group", "default", "EventBridge Schedule group (when --backend=aws-scheduler)")
-	cmd.Flags().StringVar(&opts.awsTargetArn, "aws-target-arn", "", "ARN the schedule invokes — typically the cronix-trigger Lambda (when --backend=aws-scheduler)")
-	cmd.Flags().StringVar(&opts.awsRoleArn, "aws-role-arn", "", "IAM role EventBridge assumes to call the target (when --backend=aws-scheduler)")
-	cmd.Flags().StringVar(&opts.vercelJsonPath, "vercel-json-path", "vercel.json", "path to vercel.json (when --backend=vercel)")
-	cmd.Flags().StringVar(&opts.vercelTriggerPath, "vercel-trigger-prefix", "/api/v1/scheduled/", "trigger path prefix that identifies cronix-owned cron entries in vercel.json")
+func newApplyCmd() *cobra.Command {
+	cmd := buildApplyVariant("apply", bindBackendFlags, "")
+	addBackendSubcommands(cmd, func(name string, bind func(*cobra.Command, *backendOpts)) *cobra.Command {
+		return buildApplyVariant(name, bind, name)
+	})
+	return cmd
 }
 
-func newApplyCmd() *cobra.Command {
+// buildApplyVariant builds a fresh `apply`-shaped cobra.Command. When
+// forcedBackend is "" (top-level legacy form), --backend is honored
+// at run time and bindBE is the all-in-one binder. When forcedBackend
+// is set (sub-subcommand form, e.g. `cronix apply kubernetes`), bindBE
+// registers only that backend's flags and the backend name is locked
+// at run time.
+func buildApplyVariant(use string, bindBE func(*cobra.Command, *backendOpts), forcedBackend string) *cobra.Command {
 	var (
 		manifestSource string
 		secretRefs     []string
@@ -70,16 +65,27 @@ func newApplyCmd() *cobra.Command {
 		dryRun         bool
 		output         string
 	)
-	cmd := &cobra.Command{
-		Use:   "apply",
-		Short: "Reconcile a manifest against the host scheduler",
-		Long: `apply reads a manifest, computes a Plan against the configured backend,
+	short := "Reconcile a manifest against the host scheduler"
+	long := `apply reads a manifest, computes a Plan against the configured backend,
 and executes it. With --dry-run, only the Plan is printed (same output as
 ` + "`cronix plan`" + `).
 
 cronix apply with no manifest changes is a complete no-op (D-027) — safe
-to run on every CI deploy.`,
+to run on every CI deploy.`
+	if forcedBackend != "" {
+		short = fmt.Sprintf("Reconcile a manifest against the %s backend", forcedBackend)
+		long = fmt.Sprintf("Apply for the %s backend. Equivalent to "+"`cronix apply --backend %s`"+
+			", but only the flags relevant to %s are exposed in --help and shell completion.",
+			forcedBackend, forcedBackend, forcedBackend)
+	}
+	cmd := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Long:  long,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if forcedBackend != "" {
+				bopts.name = forcedBackend
+			}
 			ctx := cmd.Context()
 			normalized, err := loadAndNormalize(ctx, manifestSource, secretRefs)
 			if err != nil {
@@ -115,7 +121,7 @@ to run on every CI deploy.`,
 	cmd.Flags().StringVar(&manifestSource, "manifest", "", "manifest source (file://, ./path, /abs/path, https://, http://localhost) — required")
 	_ = cmd.MarkFlagRequired("manifest")
 	cmd.Flags().StringSliceVar(&secretRefs, "secret-ref", nil, "secret_ref for HTTPS manifest fetches and trigger spec files")
-	bindBackendFlags(cmd, &bopts)
+	bindBE(cmd, &bopts)
 	cmd.Flags().StringVar(&specDir, "spec-dir", "/etc/cronix/jobs", "where to write per-job spec files for the trigger shim (ignored for kubernetes — specs live in ConfigMaps)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the Plan but do not execute")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output format: table|json")
@@ -123,11 +129,19 @@ to run on every CI deploy.`,
 }
 
 // newPlanAlias returns a `plan` subcommand that mirrors `apply` with
-// --dry-run forced. Aliased as `diff`.
+// --dry-run forced. Aliased as `diff`. Inherits the same per-backend
+// sub-subcommand structure (e.g. `cronix plan kubernetes`).
 func newPlanAlias(_ *cobra.Command) *cobra.Command {
-	cmd := newApplyCmd()
-	cmd.Use = "plan"
+	cmd := buildPlanVariant("plan", bindBackendFlags, "")
 	cmd.Aliases = []string{"diff"}
+	addBackendSubcommands(cmd, func(name string, bind func(*cobra.Command, *backendOpts)) *cobra.Command {
+		return buildPlanVariant(name, bind, name)
+	})
+	return cmd
+}
+
+func buildPlanVariant(use string, bindBE func(*cobra.Command, *backendOpts), forcedBackend string) *cobra.Command {
+	cmd := buildApplyVariant(use, bindBE, forcedBackend)
 	cmd.Short = "Show the Plan that apply would execute"
 	cmd.Long = `plan reads a manifest, computes a Plan against the configured backend,
 and prints what apply would do. Equivalent to apply --dry-run.`
