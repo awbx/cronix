@@ -3,7 +3,7 @@ title: cronix
 description: Cron jobs as code — your handler is the source of truth, reconciled across crontab, systemd-timer, Kubernetes, and AWS EventBridge.
 template: splash
 hero:
-  tagline: Cron jobs as code. Your handler IS the schedule. One manifest, four backends, one CLI to keep them in sync.
+  tagline: Cron jobs as code. Your handler IS the schedule. One manifest, five backends, one CLI to keep them in sync.
   image:
     alt: cronix
     file: ../../assets/cronix-mark.svg
@@ -115,7 +115,7 @@ Reviewers see schedule changes in the same diff as the code change.
     Stripe-style signatures (timestamp + sha256) on every request. Constant-time verify. Multiple secrets supported for zero-downtime rotation.
   </Card>
   <Card title="Multi-backend, one contract" icon="puzzle">
-    crontab, systemd-timer, Kubernetes CronJob, AWS EventBridge Scheduler — same manifest, same signing contract, swap with one flag.
+    crontab, systemd-timer, Kubernetes CronJob, AWS EventBridge Scheduler, Vercel Cron — same manifest, same signing contract, swap with one flag.
   </Card>
   <Card title="Polyglot from day one" icon="seti:typescript">
     TypeScript SDK + Go SDK conformance-tested against shared spec vectors. Python, Ruby, and others welcome — the protocol is the product.
@@ -146,6 +146,11 @@ Reviewers see schedule changes in the same diff as the code change.
     title="AWS EventBridge Scheduler"
     description="Schedules → cronix-trigger Lambda. Multi-account ready. No always-on host required."
     href="/cronix/backends/aws/"
+  />
+  <LinkCard
+    title="Vercel Cron"
+    description="Sync vercel.json crons[] from your manifest. Vercel fires the trigger from its own infra; your route just verifies the request."
+    href="/cronix/backends/vercel/"
   />
 </CardGrid>
 
@@ -188,7 +193,7 @@ Full install matrix → [Install](/cronix/install/)
 ## Status
 
 <Aside type="caution" title="Under active development">
-v0.7.x is the current line. The on-the-wire spec is stable, the four backends reconcile end-to-end, and the TypeScript + Go SDKs are conformance-tested. APIs may still evolve before v1.0.
+v0.9.x is the current line. The on-the-wire spec is stable, all five backends reconcile end-to-end, and the TypeScript + Go SDKs are conformance-tested. APIs may still evolve before v1.0.
 </Aside>
 
 <CardGrid>

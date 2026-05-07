@@ -81,10 +81,14 @@ type BackendEntry struct {
 	ScheduleGroup string `yaml:"schedule_group,omitempty"`
 	TargetArn     string `yaml:"target_arn,omitempty"`
 	RoleArn       string `yaml:"role_arn,omitempty"`
+
+	// vercel
+	VercelJsonPath    string `yaml:"vercel_json_path,omitempty"`
+	VercelTriggerPath string `yaml:"vercel_trigger_prefix,omitempty"`
 }
 
 // SupportedTypes is the closed set of backend types config recognizes.
-var SupportedTypes = []string{"crontab", "systemd-timer", "kubernetes", "aws-scheduler"}
+var SupportedTypes = []string{"crontab", "systemd-timer", "kubernetes", "aws-scheduler", "vercel"}
 
 // Validate checks the config is internally consistent.
 func (c *Config) Validate() error {
