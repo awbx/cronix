@@ -923,8 +923,13 @@ at every fire. Its full per-fire lifecycle:
    - `Allow`: skip lock acquisition entirely.
    - `Forbid`: try-acquire with TTL = `timeout_seconds + 30s`. On
      contention, exit `ExitLockContended` (4) with a structured log.
-   - `Replace`: in v1, behaves as `Forbid` and logs the intent
-     (the SIGTERM-the-previous-holder path is deferred to a follow-up version).
+   - `Replace`: identifies the previous host-local holder via the
+     `<key>.holder` sidecar (flock) or holder metadata (redis), sends
+     SIGTERM, then polls the lock for up to `timeout_seconds / 2`
+     (minimum 5 s). On success, log "trigger: replaced previous
+     holder" and proceed. Cross-host holders, holders that refuse
+     SIGTERM, or unreadable holder metadata surface as `ErrContended`
+     → exit `ExitLockContended` (4). The wire format is unchanged.
 6. **Per-attempt loop** (1..`policy.retries.max_attempts`):
    1. Build the HTTP request with `policy.timeout_seconds` enforced
       via `context.WithTimeout`.
@@ -1197,9 +1202,9 @@ byte; CI gates against any regression.
 **Deferred to follow-up versions:** persistent run-history for `cronix
 history` (today the command shells out to backend-native sources —
 `journalctl`, K8s Events + Pod logs, CloudWatch — with no central
-store), the SIGTERM-the-previous-holder path for the `Replace`
-concurrency policy (currently degrades to `Forbid` and logs the
-intent), graduating the Helm chart from pre-alpha, and the
+store), graduating the Helm chart from pre-alpha, cross-host SIGTERM
+for the `Replace` concurrency policy (host-local works in v1; cross-
+host needs an inter-host RPC that's out of v1 scope), and the
 backends promised on the public roadmap (Vercel Cron, Cloudflare
 Workers, Fly Machines, plus the v1.0 web dashboard).
 
