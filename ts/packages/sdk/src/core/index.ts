@@ -7,3 +7,5 @@ export * from "./manifest.js";
 export * from "./registry.js";
 export * from "./result.js";
 export * from "./types.js";
+// Standalone verify utilities — D-035.
+export * from "./verify-helpers.js";

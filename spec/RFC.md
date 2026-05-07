@@ -545,6 +545,157 @@ parameterized integration test suite at
 the same set of scenarios (signed manifest, missing signature, signed
 trigger dispatch, tampered body, unknown job).
 
+### Extension points (non-normative)
+
+The Surface above is the v1 conformance contract — every SDK MUST expose
+those four operations and pass the conformance vectors. Beyond that,
+SDKs SHOULD expose the affordances below to give applications more
+control over verification, observability, and per-job behaviour. These
+are language-idiomatic, opt-in, and deliberately outside the on-the-
+wire protocol — turning them on or off does NOT change what bytes flow
+between the reconciler, trigger shim, and app (D-030).
+
+#### Standalone verify utilities (D-035)
+
+In addition to the per-instance `verify`, SDKs SHOULD export the
+verify primitives as **standalone functions** that work without
+constructing a cron instance:
+
+```ts
+import {
+  verifyTriggerRequest,    // accepts a Web Request; returns { ok, ... }
+  verifyManifestRequest,   // accepts a Web Request; returns { ok, ... }
+  signRequest,             // sign on demand: { method, path, body, secret }
+  parseSignatureHeader,    // parse `t=…,v1=…` → { ts, sigHex }
+  canonicalSignedString,   // build the t.METHOD.path.body byte string
+  constantTimeEqual,       // constant-time byte comparison
+} from "@awbx/cronix-sdk";
+
+const r = await verifyTriggerRequest(req, { secret: process.env.SECRET! });
+if (!r.ok) return new Response(r.message, { status: r.status });
+// r.ctx is a JobContext-shaped object the caller can branch on.
+```
+
+Use cases: routes that don't fit the high-level `cron.handle` shape;
+custom middleware that runs verification then defers handler dispatch;
+testing flows that need to sign or verify without booting an instance;
+language interop where a different framework owns routing.
+
+#### Skip verify (`skipVerify: true`) (D-031)
+
+```ts
+const cron = createCron({
+  app: "billing",
+  baseUrl: "...",
+  secret: "ignored when skipVerify=true",
+  skipVerify: true, // ⚠ HMAC verification disabled — every request accepted
+});
+```
+
+When `skipVerify` is true the SDK still produces the manifest, dispatches
+to handlers, and runs the trigger lifecycle — but does NOT verify the
+HMAC signature on incoming requests. Trust is delegated to the network
+boundary (mTLS, IP allowlist, internal cluster service, dev environment).
+`cronix trigger` continues to sign outgoing requests; the wire format
+is unchanged.
+
+This is a footgun. SDKs MUST keep the option name loud and opt-in, MUST
+emit a one-line warning at instance construction, and SHOULD include a
+flag in the JobContext (`ctx.unverified === true`) so handlers can
+branch on it. Apps exposing `skipVerify` endpoints to the public
+internet have effectively removed cronix's authentication.
+
+#### Hooks (D-032)
+
+```ts
+createCron({
+  ...,
+  hooks: {
+    onVerifyFailure:  (failure, req)        => audit.failed(failure),
+    onTriggerStart:   (ctx)                  => log.info("fire", ctx.runId),
+    onTriggerSuccess: (ctx, result, ms)      => metrics.timing("ok", ms),
+    onTriggerError:   (ctx, err, ms)         => sentry.captureException(err),
+    onManifestRequest:(req)                  => audit.log("manifest pull"),
+  },
+});
+```
+
+Hooks are observability seams, not authentication. SDKs MUST treat them
+as fire-and-forget: errors thrown inside a hook MUST be caught and
+logged, MUST NOT propagate to the response, and MUST NOT influence the
+verify outcome. Hooks see the request after verify (so handlers always
+get an authenticated request unless `skipVerify` is on).
+
+#### Custom error response (`errorResponse`)
+
+```ts
+createCron({
+  ...,
+  errorResponse: (failure) => Response.json({
+    ok: false,
+    error: { code: failure.code, message: failure.message },
+  }, { status: failure.status }),
+});
+```
+
+The default `r.toResponse()` builds a plain JSON `{code, message}` body
+with the appropriate status code per §Error contract. Apps with strict
+error formats (JSON:API, RFC 9457 problem+json, GraphQL errors, etc.)
+override this hook.
+
+#### Pluggable logger
+
+```ts
+createCron({
+  ...,
+  logger: pino({ name: "cronix" }), // any { info, warn, error, debug }
+});
+```
+
+The SDK uses `console` by default. The logger receives one structured
+payload per event; the SDK MUST NOT pre-format strings into level
+calls. Hooks subsume most observability needs — the logger is for
+SDK-internal events the app didn't subscribe to (boot warnings, retry
+backoff, etc.).
+
+#### Replay window override (`replayWindowSeconds`) (D-034)
+
+```ts
+createCron({
+  ...,
+  replayWindowSeconds: 60, // tighter than the default 300
+});
+```
+
+§Replay window sets the default to 300s. Apps with stricter freshness
+requirements can tighten it. SDKs MUST reject values < 30: a window
+that small rejects legitimate requests under common clock skew. The
+verifier MAY also accept a per-call override via the existing
+`maxSkewSeconds` field on `VerifyRequest`.
+
+#### Per-job overrides (D-033)
+
+```ts
+cron.register({
+  name: "soft-job",
+  schedule: "*/15 * * * *",
+  handler: ...,
+  skipVerify: true, // ⚠ this job only — instance-level skipVerify still off elsewhere
+});
+```
+
+The first per-job override SDKs SHOULD ship is `skipVerify`, since the
+typical case is "skip verify on the dev/health job, keep it on the
+production billing job." It is purely SDK-side and does not change the
+on-the-wire wire format.
+
+Per-job `secret`, `replayWindowSeconds`, `enabled`, and `tags` are
+documented future direction. `secret` and `replayWindowSeconds` are
+SDK-side and will land in a follow-up SDK release. `enabled` and
+`tags` require additive wire-format fields on the job manifest entry
+and a corresponding `cronix apply --tag` flag; both will land
+together when the v1.x manifest extension lands.
+
 ### Conformance
 
 Any SDK in any language passes:
@@ -1012,7 +1163,7 @@ byte; CI gates against any regression.
   normalization rules, schedule syntax (POSIX cron + `@hourly` /
   `@daily` / `@weekly` aliases + IANA timezone).
 - **Authentication** — HMAC-SHA256 over `t.METHOD.path.body`,
-  `cronix-signature: t=…,v1=…` header, ±5 min replay window,
+  `X-Cron-Signature: t=…,v1=…` header, ±5 min replay window,
   constant-time verification, multi-secret rotation. CI greps for
   loose-comparison adjacent to HMAC values in both languages.
 - **SDK contract** — `createCron(...)` exposing `register` / `manifest`

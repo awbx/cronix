@@ -80,6 +80,15 @@ export type JobDefinition<E extends CronEnv = DefaultEnv> = {
   policy?: Job["policy"];
   auth?: Job["auth"];
   handler?: JobHandler<E>;
+  /**
+   * Skip HMAC verification for THIS job only — D-033. Falls back to the
+   * instance-level `skipVerify` when unset. ⚠ Trust must come from the
+   * network (mTLS, internal cluster service, etc.).
+   *
+   * Other per-job overrides (secret, replayWindowSeconds, enabled, tags)
+   * are RFC-documented future direction and not yet wired in this SDK.
+   */
+  skipVerify?: boolean;
 };
 
 /**
@@ -98,6 +107,13 @@ export type JobContext<E extends CronEnv = DefaultEnv> = {
   runId: string;
   attempt: number;
   body: Uint8Array;
+  /**
+   * `true` when this trigger arrived at a route configured with
+   * `skipVerify: true` (instance- or job-level). Handlers SHOULD branch on
+   * this for high-stakes work — e.g. refuse to mutate billing state from
+   * an unverified request even if the surrounding network is trusted.
+   */
+  unverified: boolean;
   /** Lower-cased request headers, single-valued. Useful for handlers that branch on a custom trigger header. */
   headers: Record<string, string>;
   /** Lazy UTF-8 text decode; throws on non-UTF-8. */
@@ -230,6 +246,42 @@ export type VerifyResult =
  * declares a job with no handler; bind it later from another file with
  * `cron.on(name, handler)`. Lets handlers live in their own modules.
  */
+/**
+ * Pluggable logger shape — anything with these four methods works
+ * (console, pino, winston, custom). Defaults to `console`.
+ */
+export type Logger = {
+  debug?: (...args: unknown[]) => void;
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+};
+
+/**
+ * Observability hooks — fire-and-forget. Errors thrown inside any hook
+ * are caught and logged; they MUST NOT propagate to the response.
+ * D-032.
+ */
+export type Hooks<E extends CronEnv = DefaultEnv> = {
+  /** Failed verify result + the original request that failed. */
+  onVerifyFailure?: (failure: Omit<VerifyFailure, "toResponse">, req: VerifyInput) => void | Promise<void>;
+  /** Verified context, just before the handler runs. */
+  onTriggerStart?: (ctx: JobContext<E>) => void | Promise<void>;
+  /** Verified context + handler result + elapsed milliseconds. */
+  onTriggerSuccess?: (ctx: JobContext<E>, result: HandlerResult, ms: number) => void | Promise<void>;
+  /** Verified context + thrown error + elapsed milliseconds. */
+  onTriggerError?: (ctx: JobContext<E>, err: unknown, ms: number) => void | Promise<void>;
+  /** Authenticated manifest fetch — no body, just the Web Request. */
+  onManifestRequest?: (req: VerifyInput) => void | Promise<void>;
+};
+
+/**
+ * Override the default error-response shape. Receives the structured
+ * failure; returns a Web Response. Default is plain JSON `{code, message}`
+ * with the appropriate status code.
+ */
+export type ErrorResponseFn = (failure: Omit<VerifyFailure, "toResponse">) => Response;
+
 export type CronInstance<E extends CronEnv = DefaultEnv> = {
   app: string;
   /** Declare a job. `def.handler` may be omitted; bind later via `cron.on`. */

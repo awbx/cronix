@@ -330,3 +330,125 @@ Alternatives considered: Go at repo root with TypeScript under `packages/`
 (the earlier draft); both languages under a single `src/` tree (rejected —
 fights both ecosystems' tooling defaults); Bazel/Pants (rejected — overkill
 for v1).
+
+## D-030: SDK extension points are non-normative
+Date: 2026-05-06
+Status: Locked
+
+Decision: SDKs MAY ship the affordances listed in RFC §SDK Contract /
+Extension points (skip-verify, hooks, errorResponse, pluggable logger,
+replay-window override, per-job overrides, standalone verify utilities).
+None of them participate in the on-the-wire contract. Whether or not an
+SDK exposes them, two conformant SDKs MUST agree byte-for-byte on every
+manifest and signing case in `spec/manifest-vectors.json` and
+`spec/auth-vectors.json`. The conformance vectors do NOT exercise the
+extension points.
+Rationale: We want SDKs to compete on DX without forking the wire.
+Apps that integrate against the standalone verify utilities or rely on
+hooks for observability stay portable to any SDK that ships them; apps
+that use only the four core operations are guaranteed portable.
+Alternatives considered: bake all extension points into the conformance
+suite (rejected — locks every implementation into the same DX shape);
+exclude them from the spec (rejected — apps end up depending on
+undocumented surface, which makes future SDKs harder to ship).
+
+## D-031: skipVerify is a footgun, must be loud
+Date: 2026-05-06
+Status: Locked
+
+Decision: When an SDK exposes a "skip the HMAC verify" mode, the option
+MUST be loud — opt-in, named so it cannot be turned on by accident
+(e.g. `skipVerify: true`, not `auth: false`), and the SDK MUST emit a
+one-line warning at instance construction when the flag is set. Where
+the language permits, the JobContext SHOULD also expose
+`ctx.unverified === true` so handlers can branch on it. The wire format
+is unchanged: `cronix trigger` still signs outgoing requests; the SDK
+simply does not verify them.
+Rationale: skipVerify is the right escape hatch for trust-delegated
+environments (mTLS, internal Kubernetes service, dev) but is a pure
+removal of authentication if used on the public internet. Loudness in
+the API surface and runtime trace is the only mitigation we can ship.
+Alternatives considered: refuse to ship skipVerify at all (rejected —
+apps that need it route around cronix entirely); environment-flag
+gated (rejected — env flags drift from the code that pinned them).
+
+## D-032: hooks are fire-and-forget
+Date: 2026-05-06
+Status: Locked
+
+Decision: Any SDK hook (`onVerifyFailure`, `onTriggerStart`,
+`onTriggerSuccess`, `onTriggerError`, `onManifestRequest`) MUST be
+called fire-and-forget. Errors thrown inside a hook MUST be caught by
+the SDK and routed to the configured logger; they MUST NOT propagate
+to the response, MUST NOT short-circuit the verify result, and MUST
+NOT cancel the handler.
+Rationale: Hooks are observability seams. Letting them influence the
+request shape would create a second, undocumented authentication
+surface — exactly what cronix's signed-payload contract exists to
+prevent. Hooks that need to gate behaviour can return a value, but
+the SDK MUST ignore it.
+Alternatives considered: allow hooks to short-circuit (rejected —
+conflates observability with authorization); make hooks await each
+other in sequence (rejected — slow path, easy to introduce ordering
+bugs).
+
+## D-033: per-job overrides supersede instance defaults
+Date: 2026-05-06
+Status: Locked
+
+Decision: When a job definition specifies `skipVerify`, `secret`,
+`replayWindowSeconds`, `enabled`, or `tags`, those values supersede
+the corresponding instance-level option for that job. Per-job
+overrides DO NOT change the on-the-wire wire format — they are
+additional declarative metadata in the job entry plus per-job runtime
+behaviour the SDK honours locally. Per-job overrides take precedence
+in this order: per-job > instance-level > SDK default.
+Rationale: A common ask is "let me skip-verify just this one health-
+check endpoint" or "let me give the high-stakes job its own secret".
+Forcing those into a separate cron instance is workable but worse DX
+than a per-job flag.
+Alternatives considered: only instance-level overrides (rejected —
+forces apps to instantiate multiple crons for trivial differences);
+inheritance via env vars (rejected — adds a second declaration surface
+that drifts from the manifest).
+
+## D-034: replay window minimum 30 seconds
+Date: 2026-05-06
+Status: Locked
+
+Decision: The configurable replay window (`replayWindowSeconds`,
+applied at instance level or per job) MUST be ≥ 30 seconds. Values
+below 30 cause legitimate requests to be rejected under common clock
+skew (NTP-synced hosts routinely drift 1–5 seconds; cloud VMs can
+drift more). SDKs MUST reject `replayWindowSeconds < 30` at instance
+construction or job registration with a clear error.
+Rationale: §Authentication's default of 300s reflects industry practice
+(Stripe uses 300s, GitHub webhooks 5 minutes). Apps with stricter
+freshness requirements can tighten, but a minimum guards against the
+common foot-gun of "set it to 1 second for safety," which then breaks
+in production.
+Alternatives considered: hard-code 300s (rejected — no override is too
+restrictive); allow any value ≥ 0 (rejected — trivially exposes the
+foot-gun).
+
+## D-035: standalone verify utilities are required
+Date: 2026-05-06
+Status: Locked
+
+Decision: SDKs SHOULD export their verify primitives as **standalone
+functions** alongside the per-instance methods. The minimum set:
+`verifyTriggerRequest`, `verifyManifestRequest`, `signRequest`,
+`parseSignatureHeader`, `canonicalSignedString`, and a constant-time
+byte equality helper. These functions accept the same inputs as the
+instance methods and return the same `{ ok, ... }` result shape, but
+do not require constructing a cron instance.
+Rationale: Several integration patterns benefit from verify-without-
+register: testing flows (sign a payload to inject into a fixture); a
+custom router that owns `/api/v1/scheduled/*` already and only needs
+the verdict; a polyglot service where another framework owns routing
+and only the verify primitive is needed.
+Alternatives considered: instance-only verify (rejected — forces apps
+to declare every job they intend to receive triggers for, even when
+they're using a separate routing layer); leak the auth.ts internals
+without a typed wrapper (rejected — pushes the request normalization
+burden onto the user).

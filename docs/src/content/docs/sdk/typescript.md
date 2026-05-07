@@ -339,6 +339,7 @@ If a trigger arrives for a job whose handler isn't bound yet, the SDK responds `
 
 ## See also
 
+- [Extension points](/cronix/sdk/extension-points/) — `skipVerify`, hooks, custom error responses, standalone verify utilities, replay-window override.
 - [Manifest reference](/cronix/concepts/manifest/) — what `cron.manifest()` produces and what `cronix apply` consumes.
 - [Framework adapters](/cronix/sdk/adapters/) — Express, Fastify, Koa, NestJS bridges.
 - [Go SDK](/cronix/sdk/go/) — HMAC verification for Go services.
