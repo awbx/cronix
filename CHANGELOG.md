@@ -2,6 +2,16 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.9.1] - 2026-05-07
+
+### Features
+
+- feat(cli): kubectl-style per-backend sub-subcommands for apply/plan/drift/list/show/prune/history (`ee11533`)
+
+### Bug Fixes
+
+- fix(ci): unblock Windows release build + biome import sort (`67bf5b4`)
+
 ## [0.9.0] - 2026-05-07
 
 ### Features

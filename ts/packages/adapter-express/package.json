@@ -1,6 +1,6 @@
 {
   "name": "@awbx/cronix-adapter-express",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Express adapter for @awbx/cronix-sdk. Lifts cron.handle into Express middleware while preserving the raw bytes-as-sent for HMAC verification.",
   "type": "module",
   "main": "./dist/index.cjs",
