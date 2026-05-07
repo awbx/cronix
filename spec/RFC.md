@@ -4,14 +4,14 @@
 
 **Stable for v1 (release candidate).** The on-the-wire contract — manifest
 shape, header format, signed payload, conformance vectors — is frozen,
-and every code path backing the contract is implemented. All four v1
-backends (`crontab`, `systemd-timer`, `kubernetes`, `aws-scheduler`)
-support the full reconciliation cycle: live `client-go` for kubernetes,
-`systemctl` / `journalctl` shell-out for systemd-timer, owned-block
-parsing for crontab, EventBridge Scheduler API for AWS. Render-only
-output remains available for operators who prefer `kubectl apply -f`
-or hand-installed unit files. The protocol is the product; a
-v1.0.0-rc.1 tag is the gate to v1.0.0.
+and every code path backing the contract is implemented. Five v1
+backends ship the full reconciliation cycle: `crontab` (owned-block
+parsing), `systemd-timer` (`systemctl` / `journalctl` shell-out),
+`kubernetes` (live `client-go`), `aws-scheduler` (EventBridge Scheduler
+API), `vercel` (`vercel.json` `crons[]` sync). Render-only output
+remains available for operators who prefer `kubectl apply -f` or
+hand-installed unit files. The protocol is the product; a v1.0.0-rc.1
+tag is the gate to v1.0.0.
 
 ## Summary
 
@@ -810,7 +810,7 @@ matches what the current manifest would produce. Drift MAY arise from:
 
 The Go `Backend` interface (`go/internal/backends/backend.go`) is the
 language-neutral contract for any host-scheduler adapter. v1 ships
-four backends; the contract is stable from v1 onward so community
+five backends; the contract is stable from v1 onward so community
 contributions for additional backends become possible.
 
 ### Locking primitives
@@ -884,16 +884,17 @@ backends become possible after v1 ships.
 
 ## Backend Fidelity Matrix
 
-| Capability | crontab | systemd-timer | kubernetes |
-|---|---|---|---|
-| 5-field cron | ✓ native | ✓ via `OnCalendar=` translation | ✓ native |
-| Shortcuts (`@hourly`, …) | ✓ via translation | ✓ native (`OnCalendar=hourly`) | ✓ via translation |
-| `@every <N>{m\|h}` | ✓ when N evenly divides 60/24 | ✓ via `OnCalendar=*-*-* */N` | ✗ rejected at Validate |
-| Sub-minute (`@every <Ns>`) | ✗ | ✗ in v1 (deferred to v1.1) | ✗ |
-| Per-job timezone | ✗ (system TZ only — flagged) | ✓ if systemd ≥ 240 | ✓ via `spec.timeZone` |
-| Concurrency policy enforcement | by shim | by shim (+ `RuntimeMaxSec=` kills runaway) | by shim (+ `concurrencyPolicy: Forbid` belt-and-suspenders) |
-| Native retry / backoff | none — done by shim | none — done by shim | `backoffLimit: 0` defers entirely to shim |
-| Run history source | syslog / `MAILTO=` | `journalctl -u cronix-...` | K8s Events + Pod logs |
+| Capability | crontab | systemd-timer | kubernetes | aws-scheduler | vercel |
+|---|---|---|---|---|---|
+| 5-field cron | ✓ native | ✓ via `OnCalendar=` translation | ✓ native | ✓ via `cron(...)` translation | ✓ native |
+| Shortcuts (`@hourly`, …) | ✓ via translation | ✓ native (`OnCalendar=hourly`) | ✓ via translation | ✓ via translation | ✗ rejected at Validate |
+| `@every <N>{m\|h}` | ✓ when N evenly divides 60/24 | ✓ via `OnCalendar=*-*-* */N` | ✗ rejected at Validate | ✓ via `rate(N minutes)` | ✗ rejected at Validate |
+| Sub-minute (`@every <Ns>`) | ✗ | ✗ in v1 (deferred to v1.1) | ✗ | ✗ | ✗ |
+| Per-job timezone | ✗ (system TZ only — flagged) | ✓ if systemd ≥ 240 | ✓ via `spec.timeZone` | ✓ via schedule `Timezone` | ✗ UTC only — flagged |
+| Concurrency policy enforcement | by shim | by shim (+ `RuntimeMaxSec=` kills runaway) | by shim (+ `concurrencyPolicy: Forbid` belt-and-suspenders) | by shim | by shim |
+| Native retry / backoff | none — done by shim | none — done by shim | `backoffLimit: 0` defers entirely to shim | none — done by shim | none — done by shim |
+| Run history source | syslog / `MAILTO=` | `journalctl -u cronix-...` | K8s Events + Pod logs | CloudWatch Logs | Vercel dashboard / `vercel logs` (no `cronix history`) |
+| HMAC verify on incoming triggers | shim signs | shim signs | shim signs | shim signs (Lambda) | **N/A** — Vercel fires directly; use `skipVerify: true` + Vercel `CRON_SECRET` |
 
 The "by shim" pattern is the synthesis-first principle (D-028): the host
 scheduler decides *when to fire*; the shim handles *everything that
@@ -1010,8 +1011,8 @@ read-only `list` and `validate`. The trigger shim is the same binary's
 - **Manifest source**: file path (`./manifest.json` or `/abs/path`),
   `file://`, `https://`, or `http://localhost`/`127.0.0.1` for dev.
   HTTPS sources require `--secret-ref` (one or more) for the signed GET.
-- **Backend selection**: `--backend crontab|systemd-timer|kubernetes|aws-scheduler`.
-  All four ship the full reconciliation cycle in v1. Render-only output
+- **Backend selection**: `--backend crontab|systemd-timer|kubernetes|aws-scheduler|vercel`.
+  All five ship the full reconciliation cycle in v1. Render-only output
   (`--render`-style flags or rendered YAML / unit files via the SDK)
   remains available for operators who prefer GitOps or hand-installed
   units.
@@ -1183,11 +1184,12 @@ byte; CI gates against any regression.
 - **Reconciliation model** — ownership tracking per backend (D-026),
   state table, idempotency contract (D-027), drift semantics, and the
   delete-then-update-then-create apply ordering.
-- **Backends** — all four ship the full reconciliation cycle: `crontab`
+- **Backends** — all five ship the full reconciliation cycle: `crontab`
   (owned-block markers), `aws-scheduler` (EventBridge Scheduler API),
   `systemd-timer` (`systemctl daemon-reload` / `enable --now` driven
   through `SystemctlExecutor`), `kubernetes` (live `client-go`
-  reconciliation of `CronJob` + `ConfigMap` pairs). Render-only output
+  reconciliation of `CronJob` + `ConfigMap` pairs), and `vercel`
+  (declarative rewrite of `vercel.json` `crons[]`). Render-only output
   is still available on every backend for GitOps operators.
 - **Trigger shim** — per-fire lifecycle: spec load, secret resolve,
   lock acquire (`flock` or `redis`), signed HTTP with timeout /

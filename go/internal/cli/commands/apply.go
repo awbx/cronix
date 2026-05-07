@@ -15,6 +15,7 @@ import (
 	"github.com/awbx/cronix/go/internal/backends/crontab"
 	"github.com/awbx/cronix/go/internal/backends/kubernetes"
 	"github.com/awbx/cronix/go/internal/backends/systemd"
+	"github.com/awbx/cronix/go/internal/backends/vercel"
 	"github.com/awbx/cronix/go/internal/cli/config"
 	"github.com/awbx/cronix/go/internal/manifest"
 	"github.com/awbx/cronix/go/internal/reconcile"
@@ -24,25 +25,27 @@ import (
 // backendOpts collects the flag-driven options for buildBackend so the
 // signature stays manageable as new backends land.
 type backendOpts struct {
-	name             string
-	crontabPath      string
-	triggerBin       string
-	systemdDir       string
-	k8sNamespace     string
-	k8sImage         string
-	k8sKubeconfig    string
-	k8sInCluster     bool
-	awsRegion        string
-	awsScheduleGroup string
-	awsTargetArn     string
-	awsRoleArn       string
-	secretRefs       []string
+	name              string
+	crontabPath       string
+	triggerBin        string
+	systemdDir        string
+	k8sNamespace      string
+	k8sImage          string
+	k8sKubeconfig     string
+	k8sInCluster      bool
+	awsRegion         string
+	awsScheduleGroup  string
+	awsTargetArn      string
+	awsRoleArn        string
+	vercelJsonPath    string
+	vercelTriggerPath string
+	secretRefs        []string
 }
 
 // bindBackendFlags wires the backend-selection flags shared by apply,
 // plan, drift, and list onto the given cobra Command.
 func bindBackendFlags(cmd *cobra.Command, opts *backendOpts) {
-	cmd.Flags().StringVar(&opts.name, "backend", "crontab", "host scheduler backend (crontab|systemd-timer|kubernetes|aws-scheduler)")
+	cmd.Flags().StringVar(&opts.name, "backend", "crontab", "host scheduler backend (crontab|systemd-timer|kubernetes|aws-scheduler|vercel)")
 	cmd.Flags().StringVar(&opts.crontabPath, "crontab-path", "/etc/crontab", "crontab file (when --backend=crontab)")
 	cmd.Flags().StringVar(&opts.triggerBin, "trigger-bin", "/usr/local/bin/cronix", "absolute path to the cronix binary on the host")
 	cmd.Flags().StringVar(&opts.systemdDir, "systemd-unit-dir", "/etc/systemd/system", "directory for owned timer/service unit files (when --backend=systemd-timer)")
@@ -54,6 +57,8 @@ func bindBackendFlags(cmd *cobra.Command, opts *backendOpts) {
 	cmd.Flags().StringVar(&opts.awsScheduleGroup, "aws-schedule-group", "default", "EventBridge Schedule group (when --backend=aws-scheduler)")
 	cmd.Flags().StringVar(&opts.awsTargetArn, "aws-target-arn", "", "ARN the schedule invokes — typically the cronix-trigger Lambda (when --backend=aws-scheduler)")
 	cmd.Flags().StringVar(&opts.awsRoleArn, "aws-role-arn", "", "IAM role EventBridge assumes to call the target (when --backend=aws-scheduler)")
+	cmd.Flags().StringVar(&opts.vercelJsonPath, "vercel-json-path", "vercel.json", "path to vercel.json (when --backend=vercel)")
+	cmd.Flags().StringVar(&opts.vercelTriggerPath, "vercel-trigger-prefix", "/api/v1/scheduled/", "trigger path prefix that identifies cronix-owned cron entries in vercel.json")
 }
 
 func newApplyCmd() *cobra.Command {
@@ -174,6 +179,11 @@ func BuildBackendFromEntry(e config.BackendEntry, secretRefs []string) (backends
 			RoleArn:       e.RoleArn,
 			SecretRefs:    secretRefs,
 		})
+	case "vercel":
+		return vercel.New(vercel.Options{
+			JsonPath:          e.VercelJsonPath,
+			TriggerPathPrefix: e.VercelTriggerPath,
+		})
 	default:
 		return nil, fmt.Errorf("unknown backend %q", t)
 	}
@@ -183,18 +193,20 @@ func BuildBackendFromEntry(e config.BackendEntry, secretRefs []string) (backends
 // the two construction paths can share BuildBackendFromEntry.
 func (o backendOpts) toEntry() config.BackendEntry {
 	return config.BackendEntry{
-		Type:          o.name,
-		CrontabPath:   o.crontabPath,
-		TriggerBin:    o.triggerBin,
-		UnitDir:       o.systemdDir,
-		Namespace:     o.k8sNamespace,
-		Image:         o.k8sImage,
-		Kubeconfig:    o.k8sKubeconfig,
-		InCluster:     o.k8sInCluster,
-		Region:        o.awsRegion,
-		ScheduleGroup: o.awsScheduleGroup,
-		TargetArn:     o.awsTargetArn,
-		RoleArn:       o.awsRoleArn,
+		Type:              o.name,
+		CrontabPath:       o.crontabPath,
+		TriggerBin:        o.triggerBin,
+		UnitDir:           o.systemdDir,
+		Namespace:         o.k8sNamespace,
+		Image:             o.k8sImage,
+		Kubeconfig:        o.k8sKubeconfig,
+		InCluster:         o.k8sInCluster,
+		Region:            o.awsRegion,
+		ScheduleGroup:     o.awsScheduleGroup,
+		TargetArn:         o.awsTargetArn,
+		RoleArn:           o.awsRoleArn,
+		VercelJsonPath:    o.vercelJsonPath,
+		VercelTriggerPath: o.vercelTriggerPath,
 	}
 }
 

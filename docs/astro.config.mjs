@@ -46,6 +46,7 @@ export default defineConfig({
             { label: "systemd-timer", slug: "backends/systemd" },
             { label: "Kubernetes", slug: "backends/kubernetes" },
             { label: "AWS EventBridge Scheduler", slug: "backends/aws" },
+            { label: "Vercel Cron", slug: "backends/vercel" },
           ],
         },
         {
