@@ -11,14 +11,29 @@ import (
 )
 
 func newListCmd() *cobra.Command {
+	cmd := buildListVariant("list", bindBackendFlags, "")
+	addBackendSubcommands(cmd, func(name string, bind func(*cobra.Command, *backendOpts)) *cobra.Command {
+		return buildListVariant(name, bind, name)
+	})
+	return cmd
+}
+
+func buildListVariant(use string, bindBE func(*cobra.Command, *backendOpts), forcedBackend string) *cobra.Command {
 	var (
 		bopts  backendOpts
 		output string
 	)
+	short := "List cronix-owned entries currently installed in the backend"
+	if forcedBackend != "" {
+		short = fmt.Sprintf("List cronix-owned entries currently installed in the %s backend", forcedBackend)
+	}
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List cronix-owned entries currently installed in the backend",
+		Use:   use,
+		Short: short,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if forcedBackend != "" {
+				bopts.name = forcedBackend
+			}
 			b, err := buildBackend(bopts)
 			if err != nil {
 				return err
@@ -30,7 +45,7 @@ func newListCmd() *cobra.Command {
 			return printList(cmd, output, b.Name(), entries)
 		},
 	}
-	bindBackendFlags(cmd, &bopts)
+	bindBE(cmd, &bopts)
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "output format: table|json")
 	return cmd
 }

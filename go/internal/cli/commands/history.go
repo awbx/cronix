@@ -12,6 +12,14 @@ import (
 )
 
 func newHistoryCmd() *cobra.Command {
+	cmd := buildHistoryVariant("history <app>.<job>", bindBackendFlags, "")
+	addBackendSubcommands(cmd, func(name string, bind func(*cobra.Command, *backendOpts)) *cobra.Command {
+		return buildHistoryVariant(name+" <app>.<job>", bind, name)
+	})
+	return cmd
+}
+
+func buildHistoryVariant(use string, bindBE func(*cobra.Command, *backendOpts), forcedBackend string) *cobra.Command {
 	var (
 		bopts  backendOpts
 		since  string
@@ -20,21 +28,29 @@ func newHistoryCmd() *cobra.Command {
 		limit  int
 		output string
 	)
+	short := "Show recent runs for one cronix-managed job"
+	if forcedBackend != "" {
+		short = fmt.Sprintf("Show recent runs for one cronix-managed job in the %s backend", forcedBackend)
+	}
 	cmd := &cobra.Command{
-		Use:   "history <app>.<job>",
-		Short: "Show recent runs for one cronix-managed job",
+		Use:   use,
+		Short: short,
 		Long: `history reads run records from the backend's native source — journalctl
 for systemd-timer, Pod logs for kubernetes — and prints one row per
 terminal run. crontab returns nil pending a syslog reader.
 
   cronix history billing.reconcile --backend systemd-timer --since 24h
-  cronix history billing.reconcile --backend kubernetes --status failed -o json
+  cronix history systemd-timer billing.reconcile --since 24h
+  cronix history kubernetes billing.reconcile --status failed -o json
 
 The trigger shim emits one slog-JSON record per attempt; History folds
 those into one entry per terminal run (success / app-rejected /
 retries-exhausted / lock-contended).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if forcedBackend != "" {
+				bopts.name = forcedBackend
+			}
 			ctx := cmd.Context()
 			app, job, ok := splitAppJob(args[0])
 			if !ok {
@@ -66,7 +82,7 @@ retries-exhausted / lock-contended).`,
 			return printHistory(cmd, output, b.Name(), entries)
 		},
 	}
-	bindBackendFlags(cmd, &bopts)
+	bindBE(cmd, &bopts)
 	cmd.Flags().StringVar(&since, "since", "", "look back this duration (e.g. 1h, 24h, 7d)")
 	cmd.Flags().StringVar(&until, "until", "", "stop at this duration ago (defaults to now)")
 	cmd.Flags().StringVar(&status, "status", "", "filter: ok|failed|lock-contended|timeout|unknown")
