@@ -94,6 +94,15 @@ export function canonicalSignedString(ts: number, method: string, path: string, 
   return out;
 }
 
+/**
+ * Parse a `cronix-signature` header value (`t=…,v1=…`) into its parts.
+ * Exported for callers that want to verify or inspect signatures by hand.
+ * D-035.
+ */
+export function parseSignatureHeader(header: string): Result<{ ts: number; sigHex: string }, VerifyError> {
+  return parseHeader(header);
+}
+
 function parseHeader(header: string): Result<{ ts: number; sigHex: string }, VerifyError> {
   if (typeof header !== "string" || header.length === 0) {
     return err({ code: "MalformedHeader", message: "header is empty" });

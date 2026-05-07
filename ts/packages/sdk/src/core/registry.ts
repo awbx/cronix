@@ -1,4 +1,4 @@
-import { verify as verifySignature } from "./auth.js";
+import { REPLAY_WINDOW_DEFAULT_SECONDS, verify as verifySignature } from "./auth.js";
 import {
   HeaderAttempt,
   HeaderFireTime,
@@ -12,11 +12,14 @@ import type {
   CronEnv,
   CronInstance,
   DefaultEnv,
+  ErrorResponseFn,
   HandlerResult,
   HeadersInput,
+  Hooks,
   JobContext,
   JobDefinition,
   JobHandler,
+  Logger,
   VerifyFailure,
   VerifyHandleOptions,
   VerifyInput,
@@ -27,6 +30,9 @@ import type {
   VerifyTimeOptions,
   VerifyTriggerResult,
 } from "./types.js";
+
+/** D-034: SDKs MUST reject replay-window values below this minimum. */
+export const REPLAY_WINDOW_MIN_SECONDS = 30;
 
 export const MANIFEST_PATH = "/.well-known/cron-manifest";
 export const TRIGGER_PATH_PREFIX = "/api/v1/scheduled/";
@@ -42,7 +48,7 @@ export type CreateCronOptions<E extends CronEnv = DefaultEnv> = {
   app: string;
   /** Base URL the manifest publishes for trigger endpoints. No trailing slash required. */
   baseUrl: string;
-  /** One or more secrets. Function form is re-evaluated on every verify call. */
+  /** One or more secrets. Function form is re-evaluated on every verify call. Ignored when `skipVerify: true`. */
   secret: string | string[] | (() => string | string[]);
   /** App-scoped bindings available as `ctx.env` to every handler. Hono parity: `env`. */
   env?: E["Bindings"];
@@ -53,6 +59,40 @@ export type CreateCronOptions<E extends CronEnv = DefaultEnv> = {
    * (e.g. a fixed `region` or `service` tag) that any route can override.
    */
   vars?: E["Variables"];
+  /**
+   * D-031 — disable HMAC verification on incoming requests entirely.
+   * Trust must come from the network boundary (mTLS, internal cluster
+   * service, dev environment). Outgoing requests from `cronix trigger`
+   * are still signed; the wire format is unchanged. Per-job overrides
+   * via `JobDefinition.skipVerify` take precedence.
+   *
+   * ⚠ Footgun. The SDK emits a warn-level log line when this is true.
+   */
+  skipVerify?: boolean;
+  /**
+   * D-032 — fire-and-forget observability hooks. Errors thrown inside
+   * any hook are caught and logged via `logger.error`; they MUST NOT
+   * break the request.
+   */
+  hooks?: Hooks<E>;
+  /**
+   * Override the default error-response shape. Receives the structured
+   * failure (without `toResponse`); returns a Web Response. Default is
+   * plain JSON `{code, message}` with the appropriate status code.
+   */
+  errorResponse?: ErrorResponseFn;
+  /**
+   * Pluggable logger for SDK-internal events (boot warnings, hook errors,
+   * etc.). Defaults to `console`.
+   */
+  logger?: Logger;
+  /**
+   * D-034 — replay window for the HMAC timestamp check, in seconds.
+   * Defaults to 300 (per §Replay window). MUST be ≥ 30; the SDK throws
+   * at instance construction if violated. Per-call `maxSkewSeconds`
+   * overrides this for that call.
+   */
+  replayWindowSeconds?: number;
 };
 
 /**
@@ -93,10 +133,53 @@ export function createCron<E extends CronEnv = DefaultEnv>(options: CreateCronOp
   const handlers = new Map<string, JobHandler<E>>();
   const bindings = (options.env ?? {}) as NonNullable<E["Bindings"]>;
   const defaultVars = (options.vars ?? {}) as Record<string, unknown>;
+  const logger: Logger = options.logger ?? (console as unknown as Logger);
+  const hooks: Hooks<E> = options.hooks ?? {};
+  const errorResponse: ErrorResponseFn | undefined = options.errorResponse;
+
+  // D-034: validate replay window at construction time, before any traffic.
+  if (options.replayWindowSeconds !== undefined && options.replayWindowSeconds < REPLAY_WINDOW_MIN_SECONDS) {
+    throw new Error(
+      `cronix: replayWindowSeconds must be >= ${REPLAY_WINDOW_MIN_SECONDS}s (got ${options.replayWindowSeconds}; D-034)`,
+    );
+  }
+  const replayWindow = options.replayWindowSeconds ?? REPLAY_WINDOW_DEFAULT_SECONDS;
+
+  // D-031: skipVerify is loud — emit one warn line at boot.
+  if (options.skipVerify === true) {
+    logger.warn(
+      `cronix: skipVerify=true — HMAC verification disabled for app "${options.app}". ` +
+        `Trust must come from the network boundary (mTLS, internal service, dev only).`,
+    );
+  }
+
+  // Run a hook with errors swallowed + logged. Awaits if it returns a promise.
+  const runHook = async <Args extends unknown[]>(
+    name: keyof Hooks<E>,
+    fn: ((...a: Args) => void | Promise<void>) | undefined,
+    ...args: Args
+  ): Promise<void> => {
+    if (!fn) return;
+    try {
+      await fn(...args);
+    } catch (e) {
+      logger.error(`cronix: hook ${String(name)} threw —`, e);
+    }
+  };
 
   const resolveSecrets = (): string[] => {
     const raw = typeof options.secret === "function" ? options.secret() : options.secret;
     return Array.isArray(raw) ? raw : [raw];
+  };
+
+  // Per-instance errorResult — closes over the optional errorResponse override
+  // so toResponse() goes through it when the user supplied one.
+  const errorResult = (status: number, code: string, message: string): VerifyFailure => {
+    const failure = { ok: false as const, status, code, message };
+    return {
+      ...failure,
+      toResponse: () => (errorResponse ? errorResponse(failure) : jsonResponse(status, { code, message })),
+    };
   };
 
   const buildJob = (def: JobDefinition<E>): Job => ({
@@ -130,7 +213,22 @@ export function createCron<E extends CronEnv = DefaultEnv>(options: CreateCronOp
         body: JSON.stringify({ code: "NoHandler", message: `no handler bound for job ${ctx.name}` }),
       };
     }
-    return handler(ctx);
+    const start = nowMs();
+    await runHook("onTriggerStart", hooks.onTriggerStart, ctx);
+    try {
+      const result = await handler(ctx);
+      const ms = nowMs() - start;
+      if (result.ok) {
+        await runHook("onTriggerSuccess", hooks.onTriggerSuccess, ctx, result, ms);
+      } else {
+        await runHook("onTriggerError", hooks.onTriggerError, ctx, result, ms);
+      }
+      return result;
+    } catch (e) {
+      const ms = nowMs() - start;
+      await runHook("onTriggerError", hooks.onTriggerError, ctx, e, ms);
+      throw e;
+    }
   };
 
   const register = (def: JobDefinition<E>): void => {
@@ -174,7 +272,13 @@ export function createCron<E extends CronEnv = DefaultEnv>(options: CreateCronOp
 
   const verifySignatureOnly = async (
     n: NormalizedRequest,
-  ): Promise<{ ok: true; secretIndex: number } | VerifyFailure> => {
+    bypass: boolean,
+  ): Promise<{ ok: true; secretIndex: number; unverified: boolean } | VerifyFailure> => {
+    // D-031 / D-033: skipVerify accepts everything without checking the HMAC.
+    // Returns the sentinel secretIndex -1 so callers can audit "this trigger
+    // was unverified" via JobContext.unverified.
+    if (bypass) return { ok: true, secretIndex: -1, unverified: true };
+
     const sig = pickHeader(n.headers, HeaderSignature);
     if (sig === undefined) {
       return errorResult(HTTP_UNAUTHORIZED, "MissingSignature", `missing ${HeaderSignature} header`);
@@ -187,47 +291,69 @@ export function createCron<E extends CronEnv = DefaultEnv>(options: CreateCronOp
       body: n.body,
       header: sig,
       ...(n.now !== undefined ? { now: n.now } : {}),
-      ...(n.maxSkewSeconds !== undefined ? { maxSkewSeconds: n.maxSkewSeconds } : {}),
+      // Per-call maxSkewSeconds (from VerifyRequestObject or test override) wins;
+      // otherwise the instance-level replayWindow applies.
+      maxSkewSeconds: n.maxSkewSeconds ?? replayWindow,
     });
     if (!sigResult.ok) {
       return errorResult(HTTP_UNAUTHORIZED, sigResult.error.code, sigResult.error.message);
     }
-    return { ok: true, secretIndex: sigResult.value.secretIndex };
+    return { ok: true, secretIndex: sigResult.value.secretIndex, unverified: false };
   };
 
   const verifyManifest = async (req: VerifyInput, opts?: VerifyHandleOptions<E>): Promise<VerifyManifestResult> => {
     const n = await normalizeVerifyInput(req, opts);
     if (n.method.toUpperCase() !== "GET") {
-      return errorResult(HTTP_BAD_REQUEST, "BadMethod", `manifest fetches must be GET, got ${n.method}`);
+      const f = errorResult(HTTP_BAD_REQUEST, "BadMethod", `manifest fetches must be GET, got ${n.method}`);
+      await runHook("onVerifyFailure", hooks.onVerifyFailure, stripToResponse(f), req);
+      return f;
     }
     if (n.path !== MANIFEST_PATH) {
-      return errorResult(HTTP_NOT_FOUND, "BadPath", `manifest path must be ${MANIFEST_PATH}, got ${n.path}`);
+      const f = errorResult(HTTP_NOT_FOUND, "BadPath", `manifest path must be ${MANIFEST_PATH}, got ${n.path}`);
+      await runHook("onVerifyFailure", hooks.onVerifyFailure, stripToResponse(f), req);
+      return f;
     }
-    const r = await verifySignatureOnly(n);
-    if (!r.ok) return r;
+    const r = await verifySignatureOnly(n, options.skipVerify === true);
+    if (!r.ok) {
+      await runHook("onVerifyFailure", hooks.onVerifyFailure, stripToResponse(r), req);
+      return r;
+    }
+    await runHook("onManifestRequest", hooks.onManifestRequest, req);
     return { ok: true, secretIndex: r.secretIndex };
   };
 
   const verifyTrigger = async (req: VerifyInput, opts?: VerifyHandleOptions<E>): Promise<VerifyTriggerResult<E>> => {
     const n = await normalizeVerifyInput(req, opts);
-    const r = await verifySignatureOnly(n);
-    if (!r.ok) return r;
 
+    // Resolve the job name first so we can check per-job skipVerify (D-033).
     const name = triggerNameFromPath(n.path);
     if (!name) {
-      return errorResult(
+      const f = errorResult(
         HTTP_NOT_FOUND,
         "BadPath",
         `trigger path must start with ${TRIGGER_PATH_PREFIX}, got ${n.path}`,
       );
+      await runHook("onVerifyFailure", hooks.onVerifyFailure, stripToResponse(f), req);
+      return f;
     }
-    if (!jobs.has(name)) {
-      return errorResult(HTTP_NOT_FOUND, "UnknownJob", `no registered job named ${name}`);
+    const entry = jobs.get(name);
+    if (!entry) {
+      const f = errorResult(HTTP_NOT_FOUND, "UnknownJob", `no registered job named ${name}`);
+      await runHook("onVerifyFailure", hooks.onVerifyFailure, stripToResponse(f), req);
+      return f;
     }
+    const bypass = entry.def.skipVerify ?? options.skipVerify === true;
+
+    const r = await verifySignatureOnly(n, bypass);
+    if (!r.ok) {
+      await runHook("onVerifyFailure", hooks.onVerifyFailure, stripToResponse(r), req);
+      return r;
+    }
+
     const mergedVars = { ...defaultVars, ...((opts?.vars ?? {}) as Record<string, unknown>) } as NonNullable<
       E["Variables"]
     >;
-    const ctx = buildContext<E>(options.app, name, n, bindings, mergedVars);
+    const ctx = buildContext<E>(options.app, name, n, bindings, mergedVars, r.unverified);
     return {
       ok: true,
       secretIndex: r.secretIndex,
@@ -375,6 +501,7 @@ function buildContext<E extends CronEnv>(
   n: NormalizedRequest,
   env: NonNullable<E["Bindings"]>,
   initialVars: NonNullable<E["Variables"]> | undefined,
+  unverified = false,
 ): JobContext<E> {
   const runId = pickHeader(n.headers, HeaderRunId) ?? "";
   const attemptStr = pickHeader(n.headers, HeaderAttempt) ?? "1";
@@ -389,6 +516,7 @@ function buildContext<E extends CronEnv>(
     runId,
     attempt: Number.isFinite(attempt) && attempt > 0 ? attempt : 1,
     body: n.body,
+    unverified,
     headers: singleValuedHeaders(n.headers),
     text: () => new TextDecoder("utf-8", { fatal: true }).decode(n.body),
     json: <T>() => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(n.body)) as T,
@@ -407,21 +535,20 @@ function buildContext<E extends CronEnv>(
   return ctx as JobContext<E>;
 }
 
+function nowMs(): number {
+  return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+}
+
+function stripToResponse(f: VerifyFailure): Omit<VerifyFailure, "toResponse"> {
+  // Hooks should see the structured fields, not the response builder.
+  return { ok: false, status: f.status, code: f.code, message: f.message };
+}
+
 function parseUnix(v: string | undefined): Date | null {
   if (v === undefined) return null;
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
   return new Date(n * 1000);
-}
-
-function errorResult(status: number, code: string, message: string): VerifyFailure {
-  return {
-    ok: false,
-    status,
-    code,
-    message,
-    toResponse: () => jsonResponse(status, { code, message }),
-  };
 }
 
 function jsonResponse(status: number, body: unknown): Response {

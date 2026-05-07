@@ -74,6 +74,7 @@ export default defineConfig({
           items: [
             { label: "TypeScript", slug: "sdk/typescript" },
             { label: "Framework adapters", slug: "sdk/adapters" },
+            { label: "Extension points", slug: "sdk/extension-points" },
             { label: "Go", slug: "sdk/go" },
           ],
         },
