@@ -1,6 +1,6 @@
 {
   "name": "@awbx/cronix-adapter-fastify",
-  "version": "0.7.4",
+  "version": "0.8.0",
   "description": "Fastify adapter for @awbx/cronix-sdk. Lifts cron.handle into a Fastify route handler with a raw-body content-type parser for HMAC verification.",
   "type": "module",
   "main": "./dist/index.cjs",
