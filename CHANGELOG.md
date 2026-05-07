@@ -2,6 +2,33 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.7.4] - 2026-05-07
+
+### Features
+
+- feat(sdk): extension points — skipVerify, hooks, custom error response, standalone verify utils (`38828d5`)
+
+### Refactors
+
+- Update README with user attachments link (`a2ad111`)
+
+### Docs
+
+- docs(landing): swap video URL + minor copy polish (`eff97b2`)
+- docs: full CLI / SDK / Concepts coverage + scrub internal references (`9702361`)
+
+### Chores
+
+- chore: remove internal planning doc (`668cc3e`)
+- chore: update docs (`7b2469b`)
+
+### Other
+
+- spec: scrub planning-phase references, rewrite changelog (`c21c79c`)
+- Change asset link in README (`de0b8fa`)
+- ci: opt every workflow into Node 24 for JS-based actions (`b02e6dc`)
+- ci: cancel in-progress run on same ref to save runner minutes (`c3825a8`)
+
 ## [0.7.3] - 2026-05-05
 
 ### Docs
