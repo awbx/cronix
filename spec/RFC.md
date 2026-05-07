@@ -3,13 +3,15 @@
 ## Status
 
 **Stable for v1 (release candidate).** The on-the-wire contract — manifest
-shape, header format, signed payload, conformance vectors — is frozen.
-Code paths backing the contract are implemented except where flagged in
-the Backend Fidelity Matrix (live `client-go` integration for the
-kubernetes backend and `systemctl`/`journalctl` shell-out for the
-systemd-timer backend remain follow-up work; rendering and `Validate`
-ship now). The protocol is the product; a v1.0.0-rc.1 tag is the gate
-to v1.0.0.
+shape, header format, signed payload, conformance vectors — is frozen,
+and every code path backing the contract is implemented. All four v1
+backends (`crontab`, `systemd-timer`, `kubernetes`, `aws-scheduler`)
+support the full reconciliation cycle: live `client-go` for kubernetes,
+`systemctl` / `journalctl` shell-out for systemd-timer, owned-block
+parsing for crontab, EventBridge Scheduler API for AWS. Render-only
+output remains available for operators who prefer `kubectl apply -f`
+or hand-installed unit files. The protocol is the product; a
+v1.0.0-rc.1 tag is the gate to v1.0.0.
 
 ## Summary
 
@@ -1003,10 +1005,11 @@ read-only `list` and `validate`. The trigger shim is the same binary's
 - **Manifest source**: file path (`./manifest.json` or `/abs/path`),
   `file://`, `https://`, or `http://localhost`/`127.0.0.1` for dev.
   HTTPS sources require `--secret-ref` (one or more) for the signed GET.
-- **Backend selection**: `--backend crontab|systemd-timer|kubernetes`.
-  In v1 `crontab` and `aws-scheduler` support the full reconciliation
-  cycle; `systemd-timer` and `kubernetes` are render-only (live
-  reconciliation deferred to a follow-up).
+- **Backend selection**: `--backend crontab|systemd-timer|kubernetes|aws-scheduler`.
+  All four ship the full reconciliation cycle in v1. Render-only output
+  (`--render`-style flags or rendered YAML / unit files via the SDK)
+  remains available for operators who prefer GitOps or hand-installed
+  units.
 - **Trigger spec writeout**: `cronix apply --spec-dir /etc/cronix/jobs`
   writes one `<app>.<job>.json` per job into the shim's spec directory.
 
@@ -1078,10 +1081,11 @@ See `docs/src/content/docs/backends/crontab.md` for the per-backend setup guide.
 
 ### Bare-metal — systemd-timer (v1)
 
-The `systemd-timer` backend ships with `Validate` and unit-file
-rendering in v1; live reconciliation is deferred to a follow-up
-version. Operators using systemd today can render the unit pair via the
-SDK and apply with `systemctl daemon-reload && systemctl enable --now`.
+The `systemd-timer` backend supports the full reconciliation cycle:
+unit-file rendering plus `systemctl daemon-reload` / `enable --now` /
+`disable --now` driven through the `SystemctlExecutor` interface.
+Render-only output (`RenderUnits`) remains available for operators who
+prefer to install units by hand under GitOps control.
 
 See `docs/src/content/docs/backends/systemd.md`.
 
@@ -1098,12 +1102,14 @@ docker run --rm ghcr.io/awbx/cronix:latest version
 
 ### Kubernetes
 
-The `kubernetes` backend ships with `Validate` and CronJob+ConfigMap
-YAML rendering in v1; live `client-go` reconciliation is deferred to a
-follow-up version. The pre-alpha Helm chart at
-`deploy/helm/cronix/` provisions the cronix image, ServiceAccount,
-RBAC, and an in-cluster `cronix apply` CronJob that reconciles a
-named manifest URL on a schedule.
+The `kubernetes` backend reconciles directly against the API server via
+`client-go` — `List` / `Create` / `Update` / `Delete` of `CronJob` +
+`ConfigMap` pairs (one pair per (job, schedule index)). Render-only
+YAML output (`RenderManifest`) remains available for operators who
+prefer `kubectl apply -f` under GitOps control. The pre-alpha Helm
+chart at `deploy/helm/cronix/` provisions the cronix image,
+ServiceAccount, RBAC, and an in-cluster `cronix apply` CronJob that
+reconciles a named manifest URL on a schedule.
 
 See `docs/src/content/docs/backends/kubernetes.md`.
 
@@ -1172,11 +1178,12 @@ byte; CI gates against any regression.
 - **Reconciliation model** — ownership tracking per backend (D-026),
   state table, idempotency contract (D-027), drift semantics, and the
   delete-then-update-then-create apply ordering.
-- **Backends** — `crontab` (full lifecycle, owned-block markers),
-  `aws-scheduler` (full lifecycle via EventBridge Scheduler),
-  `systemd-timer` (`Validate` + unit-file render in v1; live
-  reconciliation deferred), `kubernetes` (`Validate` + CronJob YAML
-  render in v1; live `client-go` reconciliation deferred).
+- **Backends** — all four ship the full reconciliation cycle: `crontab`
+  (owned-block markers), `aws-scheduler` (EventBridge Scheduler API),
+  `systemd-timer` (`systemctl daemon-reload` / `enable --now` driven
+  through `SystemctlExecutor`), `kubernetes` (live `client-go`
+  reconciliation of `CronJob` + `ConfigMap` pairs). Render-only output
+  is still available on every backend for GitOps operators.
 - **Trigger shim** — per-fire lifecycle: spec load, secret resolve,
   lock acquire (`flock` or `redis`), signed HTTP with timeout /
   retries / backoff, panic recovery, structured JSON logs, dedicated
@@ -1187,11 +1194,14 @@ byte; CI gates against any regression.
 - **Distribution** — Homebrew tap, deb / rpm / apk packages, Docker
   image, npm SDK, pre-alpha Helm chart at `deploy/helm/cronix/`.
 
-**Deferred to follow-up versions:** live `client-go` integration for
-the `kubernetes` backend, live `systemctl` / `journalctl` shell-out for
-the `systemd-timer` backend, persistent run-history for `cronix
-history`, the SIGTERM-the-previous-holder path for the `Replace`
-concurrency policy, and graduating the Helm chart from pre-alpha.
+**Deferred to follow-up versions:** persistent run-history for `cronix
+history` (today the command shells out to backend-native sources —
+`journalctl`, K8s Events + Pod logs, CloudWatch — with no central
+store), the SIGTERM-the-previous-holder path for the `Replace`
+concurrency policy (currently degrades to `Forbid` and logs the
+intent), graduating the Helm chart from pre-alpha, and the
+backends promised on the public roadmap (Vercel Cron, Cloudflare
+Workers, Fly Machines, plus the v1.0 web dashboard).
 
 ## Open Questions
 
