@@ -1,6 +1,6 @@
 {
   "name": "@cronix-example/hand-rolled",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "description": "A static manifest served from any HTTP server, demonstrating that the cronix protocol is framework-free.",
   "type": "module"
