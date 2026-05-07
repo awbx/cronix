@@ -2,6 +2,16 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.8.0] - 2026-05-07
+
+### Features
+
+- feat(trigger): Replace concurrency policy actually replaces (`d8124d7`)
+
+### Docs
+
+- docs(spec): align RFC with shipped backend reality (`8c30764`)
+
 ## [0.7.4] - 2026-05-07
 
 ### Features
