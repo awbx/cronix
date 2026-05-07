@@ -146,21 +146,35 @@ func Run(ctx context.Context, opts Options) (res Result) {
 		key := fmt.Sprintf("%s.%s", spec.App, spec.Job.Name)
 		// TTL = timeout + headroom so the shim cannot outlive its own lock.
 		lockTTL := timeout + 30*time.Second
-		handle, err := opts.Lock.Acquire(ctx, key, lockTTL)
+		var handle locks.Handle
+		var err error
+		if policy.Concurrency == "Replace" {
+			// SIGTERM the previous host-local holder, wait up to half the
+			// timeout for it to exit, then re-acquire. Non-local holders
+			// or holders that refuse to exit surface as ErrContended.
+			waitForExit := timeout / 2
+			if waitForExit < 5*time.Second {
+				waitForExit = 5 * time.Second
+			}
+			handle, err = locks.AcquireOrReplace(ctx, opts.Lock, key, lockTTL, waitForExit)
+		} else {
+			handle, err = opts.Lock.Acquire(ctx, key, lockTTL)
+		}
 		if err != nil {
 			if errors.Is(err, locks.ErrContended) {
 				if policy.Concurrency == "Replace" {
-					// v1: Replace is documented as best-effort host-scope
-					// only. We do not currently implement the SIGTERM-the-
-					// previous-holder path; behave as Forbid for now and
-					// log the intent. Phase 6+ refinement.
-					logger.Warn("trigger: lock contended (Replace not implemented in v1)")
+					logger.Warn("trigger: replace gave up — holder non-local or refused SIGTERM",
+						slog.String("scope", policy.ConcurrencyScope))
+				} else {
+					logger.Info("trigger: lock contended", slog.String("scope", policy.ConcurrencyScope))
 				}
-				logger.Info("trigger: lock contended", slog.String("scope", policy.ConcurrencyScope))
 				return Result{ExitCode: ExitLockContended, RunID: runIDStr}
 			}
 			logger.Error("trigger: lock acquire", slog.String("err", err.Error()))
 			return Result{ExitCode: ExitInternal, Err: err, RunID: runIDStr}
+		}
+		if policy.Concurrency == "Replace" {
+			logger.Info("trigger: replaced previous holder", slog.String("scope", policy.ConcurrencyScope))
 		}
 		defer func() {
 			if rerr := handle.Release(); rerr != nil {

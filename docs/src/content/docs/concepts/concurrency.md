@@ -13,13 +13,19 @@ cronix borrows the vocabulary directly from Kubernetes `CronJob.concurrencyPolic
 |---|---|---|---|
 | `Forbid` (default) | Skip the new fire; the previous run continues. | `4` (`ExitLockContended`), also `75` (`ExitTempfail`) | At-most-one-at-a-time guarantees matter (writes, settlements, anything non-idempotent across overlapping runs). |
 | `Allow` | No locking. Both runs proceed in parallel. | n/a (no contention possible) | Reads, fan-in to an idempotent endpoint, anything where a second concurrent run is fine. |
-| `Replace` | Kill the previous run, then start the new one. *In v1, behaves as `Forbid` and logs the intent.* | `4` (`ExitLockContended`) | Long-running periodic syncs where the latest fire's view of the world is the only one that matters. |
+| `Replace` | SIGTERM the previous host-local run, then start the new one. | `4` (`ExitLockContended`) when the previous holder is non-local or refuses to exit | Long-running periodic syncs where the latest fire's view of the world is the only one that matters. |
 
 The default is `Forbid` because non-idempotent overlap is the most common bug class. If your handler is genuinely safe to run in parallel, set `concurrency: "Allow"` explicitly — the explicitness shows up in code review.
 
 ### A note on `Replace`
 
-In v1, `Replace` is documented as best-effort host-scope only and currently behaves as `Forbid` — the trigger shim logs a warning recording the intent, then exits with `ExitLockContended`. The SIGTERM-the-previous-holder path that fully implements `Replace` is deferred. Apps that need true replace semantics should treat `Replace` as a hint and design handlers to be safe under `Forbid` semantics in v1.
+`Replace` is **host-scope only** in v1. When a fire arrives and the lock is contended:
+
+1. The shim reads the previous holder's PID + hostname from a sidecar (`<key>.holder` for flock; holder metadata key for redis).
+2. If the holder lives on this host, the shim sends `SIGTERM` and polls the lock for up to `timeout_seconds / 2` (minimum 5 seconds) waiting for the previous handler to exit and release.
+3. On success, the shim logs `trigger: replaced previous holder` and proceeds. On failure, it falls back to `ExitLockContended` (4) — same exit code as `Forbid`, so dashboards stay simple.
+
+What's deferred: **cross-host SIGTERM**. If the previous holder lives on a different host (visible only with `concurrency_scope: global`), the shim cannot signal it without an inter-host RPC, so it returns `ErrContended` instead. Apps that need cross-host replace semantics should pin to `concurrency_scope: host` for the relevant jobs, or design handlers tolerant of the slightly-degraded behaviour.
 
 ## Scope: where the lock lives
 
