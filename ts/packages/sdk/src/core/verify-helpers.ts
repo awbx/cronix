@@ -10,7 +10,7 @@
  * `cron.verifyManifest`) so apps can swap one for the other without
  * reading the docs.
  */
-import { sign as signImpl, verify as verifyImpl, REPLAY_WINDOW_DEFAULT_SECONDS } from "./auth.js";
+import { REPLAY_WINDOW_DEFAULT_SECONDS, sign as signImpl, verify as verifyImpl } from "./auth.js";
 import { HeaderSignature } from "./headers.js";
 
 const HTTP_OK = 200;

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"syscall"
 	"time"
 )
 
@@ -51,31 +50,30 @@ type Killer interface {
 	Kill(pid int, sig os.Signal) error
 }
 
-// DefaultKiller sends the signal via syscall.Kill on Unix; the no-op
-// fallback on platforms without it. Trigger shim wires this to the real
-// killer at boot.
+// DefaultKiller sends the signal via syscall.Kill on Unix. On Windows
+// the Replace policy is documented as a Unix host-local feature (RFC
+// §Trigger Shim Behavior), so the kill is a no-op that returns
+// ErrReplaceNotSupported — AcquireOrReplace then surfaces ErrContended
+// to the caller, identical to the Forbid policy. Trigger shim wires
+// this to the real killer at boot.
 type DefaultKiller struct{}
 
-// Kill sends the signal using `os/syscall`. A non-running PID surfaces as
-// ErrProcessNotFound; the caller treats that as "holder already gone."
+// Kill sends `sig` to `pid`. On Unix this calls syscall.Kill. On
+// Windows it returns ErrReplaceNotSupported. A non-running PID surfaces
+// as ErrProcessNotFound; the caller treats that as "holder already gone."
 func (DefaultKiller) Kill(pid int, sig os.Signal) error {
 	if pid <= 0 {
 		return errors.New("locks: invalid PID")
 	}
-	syscallSig, ok := sig.(syscall.Signal)
-	if !ok {
-		return errors.New("locks: signal is not a syscall.Signal")
-	}
-	if err := syscall.Kill(pid, syscallSig); err != nil {
-		if errors.Is(err, syscall.ESRCH) {
-			return ErrProcessNotFound
-		}
-		return err
-	}
-	return nil
+	return killProcess(pid, sig)
 }
 
 // ErrProcessNotFound is returned by a Killer when the target PID is no
 // longer running (ESRCH). Replace treats this as "holder already gone,
 // proceed to acquire."
 var ErrProcessNotFound = errors.New("locks: process not found")
+
+// ErrReplaceNotSupported is returned by DefaultKiller.Kill on Windows
+// (and any other platform without a SIGTERM-style API). Surfaced through
+// AcquireOrReplace as ErrContended.
+var ErrReplaceNotSupported = errors.New("locks: Replace policy not supported on this platform")

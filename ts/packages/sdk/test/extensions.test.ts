@@ -5,14 +5,14 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
+  createCron,
   type Logger,
   MANIFEST_PATH,
-  REPLAY_WINDOW_MIN_SECONDS,
-  TRIGGER_PATH_PREFIX,
-  createCron,
   parseSignatureHeader,
+  REPLAY_WINDOW_MIN_SECONDS,
   sign,
   signRequest,
+  TRIGGER_PATH_PREFIX,
   verifyManifestRequest,
   verifyTriggerRequest,
 } from "../src/core/index.js";
@@ -44,9 +44,7 @@ describe("skipVerify (D-031)", () => {
       },
     });
 
-    const res = await cron.handle(
-      new Request(triggerUrl("noop"), { method: "POST", body: "{}" }),
-    );
+    const res = await cron.handle(new Request(triggerUrl("noop"), { method: "POST", body: "{}" }));
     expect(res.status).toBe(200);
     expect(seen).toEqual([{ unverified: true }]);
   });
@@ -88,14 +86,10 @@ describe("skipVerify (D-031)", () => {
       },
     });
 
-    const openRes = await cron.handle(
-      new Request(triggerUrl("open-job"), { method: "POST", body: "" }),
-    );
+    const openRes = await cron.handle(new Request(triggerUrl("open-job"), { method: "POST", body: "" }));
     expect(openRes.status).toBe(200);
 
-    const closedRes = await cron.handle(
-      new Request(triggerUrl("closed-job"), { method: "POST", body: "" }),
-    );
+    const closedRes = await cron.handle(new Request(triggerUrl("closed-job"), { method: "POST", body: "" }));
     expect(closedRes.status).toBe(401);
   });
 
@@ -137,7 +131,13 @@ describe("hooks (D-032)", () => {
 
     const ts = NOW;
     const body = new TextEncoder().encode("");
-    const sigT = await sign({ secret: SECRET, method: "POST", path: `${TRIGGER_PATH_PREFIX}noop`, body, timestamp: ts });
+    const sigT = await sign({
+      secret: SECRET,
+      method: "POST",
+      path: `${TRIGGER_PATH_PREFIX}noop`,
+      body,
+      timestamp: ts,
+    });
     await cron.handle(
       new Request(triggerUrl("noop"), {
         method: "POST",
@@ -147,7 +147,13 @@ describe("hooks (D-032)", () => {
       { now: ts },
     );
 
-    const sigM = await sign({ secret: SECRET, method: "GET", path: MANIFEST_PATH, body: new Uint8Array(0), timestamp: ts });
+    const sigM = await sign({
+      secret: SECRET,
+      method: "GET",
+      path: MANIFEST_PATH,
+      body: new Uint8Array(0),
+      timestamp: ts,
+    });
     await cron.handle(new Request(manifestUrl(), { headers: { "X-Cron-Signature": sigM.header } }), { now: ts });
 
     expect(events).toEqual(["start:noop", "success:noop:ms>=0=true", "manifest"]);
@@ -279,10 +285,9 @@ describe("standalone verify utilities (D-035)", () => {
   });
 
   it("verifyTriggerRequest rejects an unsigned request with MissingSignature 401", async () => {
-    const r = await verifyTriggerRequest(
-      new Request(triggerUrl("noop"), { method: "POST", body: "" }),
-      { secret: SECRET },
-    );
+    const r = await verifyTriggerRequest(new Request(triggerUrl("noop"), { method: "POST", body: "" }), {
+      secret: SECRET,
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.status).toBe(401);
@@ -291,10 +296,7 @@ describe("standalone verify utilities (D-035)", () => {
   });
 
   it("verifyManifestRequest rejects POSTs with BadMethod 400", async () => {
-    const r = await verifyManifestRequest(
-      new Request(manifestUrl(), { method: "POST" }),
-      { secret: SECRET },
-    );
+    const r = await verifyManifestRequest(new Request(manifestUrl(), { method: "POST" }), { secret: SECRET });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.status).toBe(400);
