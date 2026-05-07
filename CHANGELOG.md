@@ -2,6 +2,12 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.9.0] - 2026-05-07
+
+### Features
+
+- feat(vercel): declarative Vercel Cron backend — fifth v1 backend (`9b2866b`)
+
 ## [0.8.0] - 2026-05-07
 
 ### Features
