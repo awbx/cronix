@@ -1,0 +1,62 @@
+name: Spec question
+description: Propose a change to the manifest shape, header format, signing scheme, or backend semantics.
+labels: ["kind/spec", "needs-rfc"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Spec changes follow the `Q-NNN` → `D-NNN` process documented in
+        [`spec/OPEN_QUESTIONS.md`](https://github.com/awbx/cronix/blob/main/spec/OPEN_QUESTIONS.md)
+        and [`GOVERNANCE.md`](https://github.com/awbx/cronix/blob/main/GOVERNANCE.md).
+        Filing this issue is step 1 — it becomes a `Q-NNN` entry once a
+        maintainer triages it.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: The question
+      description: Phrase it as a question with a clear answer space.
+      placeholder: "Should `headers` values support per-fire interpolation?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What real problem motivates the question? What have you tried with the current spec?
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: Options
+      description: At least two. Include a "do nothing" option if relevant.
+      placeholder: |
+        A. ...
+        B. ...
+        C. Do nothing — workaround is X.
+    validations:
+      required: true
+
+  - type: textarea
+    id: leaning
+    attributes:
+      label: Currently leaning
+      description: Optional. Your preferred option and why.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Affected surface
+      description: Check everything this question touches.
+      options:
+        - label: Manifest JSON shape
+        - label: HMAC signing / verification
+        - label: HTTP header format
+        - label: Backend reconciliation semantics
+        - label: Conformance vectors
+        - label: Other (explain in Context)

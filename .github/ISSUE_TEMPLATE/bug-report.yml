@@ -1,0 +1,70 @@
+name: Bug report
+description: Something in cronix does not behave as documented.
+labels: ["kind/bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. The faster you can get us to a minimal
+        reproduction, the faster we can fix it.
+
+  - type: input
+    id: version
+    attributes:
+      label: cronix version
+      description: Output of `cronix version` (or the `@awbx/cronix-sdk` version if the bug is in the SDK).
+      placeholder: "v0.9.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      description: Which backend (if any) is involved?
+      options:
+        - crontab
+        - systemd-timer
+        - kubernetes
+        - aws-scheduler
+        - vercel
+        - "n/a (SDK / spec / docs)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: |
+        Minimal manifest snippet + the exact command line you ran. If the
+        bug is backend-specific, include the relevant fragment from the
+        host scheduler (`crontab -l`, `systemctl status`, `kubectl get cronjob -o yaml`).
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, kernel, container vs. host, anything relevant to host-scheduler interaction.
+      placeholder: |
+        macOS 14.5, Apple Silicon
+        Docker Desktop 4.x
+    validations:
+      required: false
