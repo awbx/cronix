@@ -1,0 +1,53 @@
+name: v1 readiness item
+description: Track a gap on the path to v1.0.0 (maintainer-driven; contributors welcome).
+labels: ["kind/v1-readiness", "milestone/v1.0.0"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use for items listed in [`ROADMAP.md`](https://github.com/awbx/cronix/blob/main/ROADMAP.md)
+        under v1.0.0-rc.1 or v1.0.0. One issue per discrete deliverable.
+
+  - type: input
+    id: deliverable
+    attributes:
+      label: Deliverable
+      description: One sentence on the concrete artifact this issue ships.
+      placeholder: "Cosign-signed release artifacts published with every GoReleaser run"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - "supply-chain (cosign / SLSA / SBOM)"
+        - "observability (OTel / structured logs)"
+        - "ops (runbook / dashboards / helm)"
+        - "ci (matrix / conformance / k3d)"
+        - "spec (RFC / decisions / vectors)"
+        - "sdk (TS / Go)"
+        - "backend (specify which)"
+        - "docs"
+        - "governance / CNCF"
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know this is done?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+    validations:
+      required: false

@@ -38,10 +38,19 @@ goreleaser build --snapshot --clean
 ## Pull requests
 
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, …).
+- **DCO sign-off on every commit** — `git commit -s`. CI blocks merge without it. See [Developer Certificate of Origin](https://developercertificate.org/).
 - Add a changeset for any TS-package surface change: `cd ts && pnpm changeset`.
 - Tests with the change. Coverage is not allowed to drop.
 - For a new backend: implement the `Backend` interface, pass the reconciler integration tests, and submit a fidelity-matrix update for §Backend Fidelity Matrix in RFC.
 - For a new SDK in another language: pass `spec/manifest-vectors.json` and `spec/auth-vectors.json` byte-for-byte, plus the §SDK Contract scenario set.
+
+## Governance and roadmap
+
+- [`GOVERNANCE.md`](./GOVERNANCE.md) — roles, decision-making, becoming a maintainer
+- [`MAINTAINERS.md`](./MAINTAINERS.md) — current maintainers
+- [`ROADMAP.md`](./ROADMAP.md) — what's planned for v1.0.0 and beyond
+- [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — Contributor Covenant 2.1
+- [`ADOPTERS.md`](./ADOPTERS.md) — list yourself if you use cronix
 
 ## Reporting bugs
 

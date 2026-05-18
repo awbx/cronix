@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest a non-spec enhancement (CLI ergonomics, backend support, docs).
+labels: ["kind/feature", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for ergonomics, new backends, docs, tooling. If your
+        suggestion changes the manifest shape, header format, signing
+        scheme, or any other on-the-wire contract, file a **Spec
+        question** instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, or what is awkward?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like cronix to behave?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about and why you ruled them out.
+    validations:
+      required: false
+
+  - type: input
+    id: adopter
+    attributes:
+      label: Are you on the ADOPTERS list?
+      description: Optional. Adopter-driven feature requests are weighted ahead of speculative ones.
+      placeholder: "Yes — Acme Corp"
+    validations:
+      required: false
