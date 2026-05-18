@@ -111,11 +111,28 @@ escalation.
 
 ## Licensing
 
-cronix is currently licensed under the MIT License. A future relicensing
-to Apache 2.0 (to align with CNCF's patent-grant preference) requires
-unanimous maintainer agreement and a 30-day public comment period.
+cronix is licensed under the [Apache License, Version 2.0](./LICENSE).
+Releases prior to v1.0.0 were distributed under the MIT License; see
+[`LICENSE-MIT`](./LICENSE-MIT) for the historical text and `D-036` in
+[`spec/DECISIONS.md`](./spec/DECISIONS.md) for the relicensing decision.
+
 Contributors retain copyright on their contributions; the project does
-not require a CLA.
+not require a CLA. Every commit must be DCO-signed (see below).
+
+### License changes
+
+While the project has external contributors with copyright in the
+codebase (verifiable via `git shortlog -sne`), license changes require
+unanimous maintainer agreement plus a 30-day public comment window.
+
+While the project is sole-authored (`git shortlog -sne` shows a single
+committer), the sole maintainer may relicense at will, with the
+decision recorded as a `D-NNN` entry in `spec/DECISIONS.md`. This
+clause exists because a public comment window with no external
+copyright holders is theatre, not governance.
+
+A move *away* from an OSI-approved license is not permitted under this
+clause.
 
 ## DCO
 

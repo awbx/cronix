@@ -27,7 +27,7 @@
     "go"
   ],
   "author": "Abdelhadi Sabani",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@10.33.0",
   "devDependencies": {
     "@biomejs/biome": "^2.4.12",
