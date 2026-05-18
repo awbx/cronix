@@ -452,3 +452,57 @@ to declare every job they intend to receive triggers for, even when
 they're using a separate routing layer); leak the auth.ts internals
 without a typed wrapper (rejected — pushes the request normalization
 burden onto the user).
+
+---
+
+## D-036: license is Apache 2.0
+Date: 2026-05-19
+Status: Locked
+
+Decision: cronix is licensed under the Apache License, Version 2.0
+([LICENSE](../LICENSE)). Releases prior to v1.0.0 were distributed
+under the MIT License, preserved in [LICENSE-MIT](../LICENSE-MIT) for
+the historical record. The `NOTICE` file at the repository root
+satisfies the Apache 2.0 §4(d) attribution requirement for downstream
+redistribution.
+
+Rationale: Apache 2.0 carries an explicit patent grant in §3, plus a
+patent-retaliation termination clause. MIT provides no analogous
+protection. CNCF's incubation and graduation stages express a
+preference for Apache 2.0 for exactly this reason; sandbox accepts
+either, but choosing Apache 2.0 now means the question does not
+return under higher cost later.
+
+The cost of the relicense was zero: at the time of the decision, the
+project was sole-authored (`git shortlog -sne` on the v0.9.1 tag
+showed a single committer, the sole maintainer). No CLA existed and
+none was needed, because there was no external copyright holder to
+seek sign-off from.
+
+Process: Per [GOVERNANCE.md §Licensing](../GOVERNANCE.md), the
+sole-author clause permitted the maintainer to relicense at will
+without a 30-day public comment window. That clause exists explicitly
+to avoid running a comment window with no external copyright holders
+to consult — that would have been theatre. The amended clause and
+this decision were committed together in the relicense PR.
+
+Alternatives considered:
+1. Stay MIT. Rejected — defers the same decision to a point where
+   more contributors are involved and the migration tax is no longer
+   zero. The patent-grant alignment is genuinely valuable independent
+   of CNCF.
+2. Dual-license MIT OR Apache 2.0. Rejected — downstream consumers
+   must choose one effective license, and tooling (SPDX expressions,
+   package-manager fields) handles "single license" as the common
+   case. The historical MIT text is preserved in `LICENSE-MIT` for
+   anyone who needs to confirm the terms of a pre-v1.0.0 release.
+3. Move to a copyleft license (MPL, LGPL). Rejected — incompatible
+   with cronix's positioning as a reference implementation that
+   downstreams (commercial SaaS vendors, internal SDKs) should be
+   free to embed without copyleft propagation concerns.
+
+Forward compatibility: a move *away* from an OSI-approved license is
+not permitted under the amended GOVERNANCE.md clause. Any future
+relicense to a license less permissive than Apache 2.0 would require
+both unanimous maintainer agreement and the full 30-day comment
+window, regardless of contributor count.

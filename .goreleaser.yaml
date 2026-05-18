@@ -75,7 +75,7 @@ nfpms:
     homepage: https://github.com/awbx/cronix
     maintainer: Abdelhadi Sabani <asabani.work@gmail.com>
     description: Cron jobs as code — reconciler that turns application-declared manifests into native host scheduler entries.
-    license: MIT
+    license: Apache-2.0
     formats:
       - deb
       - rpm
@@ -123,7 +123,7 @@ brews:
     directory: Formula
     homepage: https://github.com/awbx/cronix
     description: Cron jobs as code — reconcile app-declared schedules against the host scheduler
-    license: MIT
+    license: Apache-2.0
     install: |
       bin.install "cronix"
       generate_completions_from_executable(bin/"cronix", "completion")

@@ -1,0 +1,11 @@
+cronix
+Copyright 2026 Abdelhadi Sabani
+
+This product is licensed under the Apache License, Version 2.0 (the
+"License"); you may not use this product except in compliance with the
+License. See the LICENSE file in the repository root for the full text.
+
+Releases prior to v1.0.0 were distributed under the MIT License. The
+historical text is preserved in the LICENSE-MIT file for reference. The
+decision to relicense to Apache 2.0 is recorded as D-036 in
+spec/DECISIONS.md.
