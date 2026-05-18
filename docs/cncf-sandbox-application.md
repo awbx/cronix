@@ -62,11 +62,16 @@ manifest in the same repo as the workflow.
 
 ## License
 
-Currently MIT. CNCF prefers Apache 2.0 for patent-grant alignment. The
-maintainers will discuss relicensing as part of v1.0.0; see
-[`GOVERNANCE.md`](../GOVERNANCE.md). All current contributors hold
-copyright on their own contributions; there is no CLA, so relicensing
-requires individual sign-off from each contributor.
+Apache License 2.0 (see [`LICENSE`](../LICENSE)). Releases prior to
+v1.0.0 were distributed under the MIT License; the historical text is
+preserved at [`LICENSE-MIT`](../LICENSE-MIT). The relicensing decision
+is recorded as `D-036` in [`spec/DECISIONS.md`](../spec/DECISIONS.md).
+
+The relicense was costless: at the time of the decision the project
+was sole-authored (verifiable via `git shortlog -sne`), so there was
+no external copyright holder to obtain sign-off from. Apache 2.0 was
+chosen for its explicit patent grant (§3), which CNCF prefers for
+incubation and graduation stages.
 
 ## Source control
 
@@ -131,8 +136,7 @@ under §Security.
 - [ ] CODE_OF_CONDUCT.md, GOVERNANCE.md, MAINTAINERS.md, ADOPTERS.md, ROADMAP.md committed
 - [ ] DCO check active on every PR
 - [ ] At least three named adopters in ADOPTERS.md
-- [ ] Apache-2.0 relicense decision made (stay MIT or move; either is
-      accepted by Sandbox, but the decision should be explicit)
+- [x] Apache-2.0 relicense decision made (relicensed; `D-036`)
 - [ ] Public talk or written piece introducing cronix to a wider
       audience (KubeCon CFP, blog cross-post, podcast)
 - [ ] TAG App-Delivery introduction call requested

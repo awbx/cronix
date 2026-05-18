@@ -57,8 +57,8 @@ hardens the operator and supply-chain story.
 
 - Two weeks of rc.1 in the wild without contract-breaking issues
 - At least three named adopters in `ADOPTERS.md`
-- License decision finalized: stay MIT or relicense to Apache 2.0 for CNCF
-  patent-grant alignment (see [governance](./GOVERNANCE.md))
+- ~~License decision finalized: stay MIT or relicense to Apache 2.0 for CNCF
+  patent-grant alignment~~ — done. Relicensed to Apache 2.0 (`D-036`).
 - All five v1 backends pass the conformance + integration matrix
 - 1.0 release notes call out the on-the-wire stability guarantee (D-002:
   `version: 1` is the contract; v2 will introduce `version: 2` alongside

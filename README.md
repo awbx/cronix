@@ -208,7 +208,7 @@ Hono, Bun, Workers, Vercel/Next.js, and Deno all serve a Web `Request` natively 
 
 ## Contributing
 
-cronix is open source under MIT — issues, discussions, and PRs are welcome. A few things worth knowing before you dive in:
+cronix is open source under Apache 2.0 — issues, discussions, and PRs are welcome. A few things worth knowing before you dive in:
 
 - **The RFC is the product.** Behavior changes are discussed and agreed before code lands. The protocol shape (manifest, signing, headers) is the contract; everything else is an implementation detail.
 - **Both languages stay in lock-step.** Manifest shape, header format, and signing scheme changes must land in TypeScript (`@awbx/cronix-sdk`) and Go (`internal/manifest`, `internal/auth`) in the same PR, with both passing the shared `manifest-vectors.json` and `auth-vectors.json`.
@@ -224,4 +224,4 @@ Quick paths to help if you're new:
 
 ## License
 
-MIT © Abdelhadi Sabani — see [LICENSE](./LICENSE).
+Apache 2.0 © Abdelhadi Sabani — see [LICENSE](./LICENSE). Releases before v1.0.0 were distributed under MIT; the historical text lives at [LICENSE-MIT](./LICENSE-MIT).
