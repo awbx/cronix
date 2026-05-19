@@ -2,6 +2,21 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.10.0] - 2026-05-19
+
+### Features
+
+- feat(supply-chain): SLSA Build L3 provenance + npm provenance (#3) (#29) (`14b1812`)
+- feat(supply-chain): cosign-sign release artifacts (#2) (#28) (`5dcfc31`)
+
+### Docs
+
+- docs: governance, roadmap, and CNCF Sandbox kit (`021dad4`)
+
+### Chores
+
+- chore: relicense to Apache 2.0 (D-036) (#18) (`601cac8`)
+
 ## [0.9.1] - 2026-05-07
 
 ### Features
