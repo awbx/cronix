@@ -21,6 +21,12 @@ env:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    # Hashes of every release artifact, base64-encoded, exposed as a job
+    # output so the SLSA provenance generator job can consume them as
+    # subjects. checksums.txt is GoReleaser's canonical list and is in
+    # the exact <hex-sha256>  <filename> format the generator expects.
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,6 +62,70 @@ jobs:
           # When unset, goreleaser still produces the formula locally
           # but skips uploading — see brews.skip_upload in .goreleaser.yaml.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Generate artifact hashes for SLSA provenance
+        id: hash
+        working-directory: dist
+        run: |
+          # GoReleaser's checksums.txt is already <sha256>  <filename> per
+          # line — exactly the format slsa-github-generator wants. Base64
+          # the whole file and hand it off as the subject set.
+          HASHES=$(base64 -w0 checksums.txt)
+          echo "hashes=$HASHES" >> "$GITHUB_OUTPUT"
+
+  provenance:
+    needs: [goreleaser]
+    permissions:
+      actions: read     # read workflow metadata to embed in provenance
+      id-token: write   # OIDC for Sigstore Fulcio signing
+      contents: write   # upload the .intoto.jsonl as a release asset
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: "${{ needs.goreleaser.outputs.hashes }}"
+      upload-assets: true
+      provenance-name: cronix-${{ github.ref_name }}.intoto.jsonl
+
+  verify-provenance:
+    name: Verify SLSA provenance
+    needs: [provenance]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Install slsa-verifier
+        uses: slsa-framework/slsa-verifier/actions/installer@v2.6.0
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p verify-dist
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir verify-dist
+      - name: Verify provenance against every binary and the checksum file
+        working-directory: verify-dist
+        run: |
+          set -euo pipefail
+          PROVENANCE="cronix-${GITHUB_REF_NAME}.intoto.jsonl"
+          if [ ! -f "$PROVENANCE" ]; then
+            echo "::error::expected provenance file $PROVENANCE missing from release assets"
+            exit 1
+          fi
+          shopt -s nullglob
+          verified=0
+          for f in cronix_*.tar.gz cronix_*.zip cronix_*.deb cronix_*.rpm cronix_*.apk checksums.txt; do
+            echo "::group::verify $f"
+            slsa-verifier verify-artifact "$f" \
+              --provenance-path "$PROVENANCE" \
+              --source-uri "github.com/${GITHUB_REPOSITORY}" \
+              --source-tag "${GITHUB_REF_NAME}"
+            verified=$((verified + 1))
+            echo "::endgroup::"
+          done
+          if [ "$verified" -eq 0 ]; then
+            echo "::error::no artifacts matched the expected name patterns; provenance was never exercised"
+            exit 1
+          fi
+          echo "::notice::verified SLSA provenance against $verified artifact(s)"
 
   npm:
     name: Publish TS packages to npm
@@ -89,9 +159,12 @@ jobs:
         working-directory: ts
         run: |
           # sdk first (no internal deps), then framework adapters, then nest (depends on adapter-express).
+          # --provenance attaches an npm-native SLSA-shaped attestation bound
+          # to this workflow's OIDC identity. The top-level permissions block
+          # already grants id-token: write, which is what npm needs.
           for dir in packages/sdk packages/adapter-express packages/adapter-fastify packages/adapter-koa packages/adapter-nest; do
             echo "::group::publish $dir"
-            (cd "$dir" && pnpm publish --access public --no-git-checks)
+            (cd "$dir" && pnpm publish --provenance --access public --no-git-checks)
             echo "::endgroup::"
           done
         env:
