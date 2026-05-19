@@ -7,9 +7,18 @@
 {{- end -}}
 
 {{- define "cronix.labels" -}}
-app.kubernetes.io/name: {{ include "cronix.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
+{{ include "cronix.selectorLabels" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 cronix.dev/managed: "true"
+{{- end -}}
+
+{{- /*
+Stable subset used by NetworkPolicy podSelector + Pod-template
+labels. Excludes chart version and managed-by so the selector
+keeps matching across helm upgrade.
+*/ -}}
+{{- define "cronix.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "cronix.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}

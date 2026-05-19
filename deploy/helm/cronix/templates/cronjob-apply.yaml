@@ -15,13 +15,24 @@ spec:
     spec:
       backoffLimit: 1
       template:
+        metadata:
+          labels:
+            {{- include "cronix.selectorLabels" . | nindent 12 }}
         spec:
           restartPolicy: OnFailure
           serviceAccountName: {{ default (include "cronix.fullname" .) .Values.serviceAccount.name }}
+          {{- with .Values.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           containers:
           - name: cronix
             image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
             imagePullPolicy: {{ .Values.image.pullPolicy }}
+            {{- with .Values.securityContext }}
+            securityContext:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
             args:
               - apply
               - --manifest={{ .Values.manifestUrl }}
@@ -38,4 +49,13 @@ spec:
               {{- end }}
             resources:
               {{- toYaml .Values.resources | nindent 14 }}
+            # readOnlyRootFilesystem requires a writable /tmp for any
+            # transient files the Go runtime / TLS code paths may
+            # create. emptyDir is cleaned up when the Pod exits.
+            volumeMounts:
+              - name: tmp
+                mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
 {{- end }}
