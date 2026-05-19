@@ -259,13 +259,13 @@ The SLSA route fails closed if the artifact, the source repo, or the tag do not 
 
 ### Verify a container image
 
-Cosign attaches signatures to images in-registry; verification does not require pulling the image:
+Cosign attaches signatures to images in-registry; verification does not require pulling the image. **Image tags omit the leading `v`** — GoReleaser uses the bare semver for container tags, so `v0.10.0` becomes image tag `0.10.0-amd64`:
 
 ```sh
 cosign verify \
   --certificate-identity-regexp 'https://github.com/awbx/cronix/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/awbx/cronix:v<VERSION>-amd64
+  ghcr.io/awbx/cronix:<VERSION>-amd64
 ```
 
 ### Verify an npm package
