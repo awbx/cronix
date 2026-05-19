@@ -17,14 +17,68 @@ applySchedule: "*/5 * * * *"
 # Extra env passed to the cronix-apply CronJob.
 env: []
 
-# RBAC: by default, cronix needs Read/Write on CronJobs and ConfigMaps
-# in its own namespace.
+# RBAC: by default, cronix needs CRUD on CronJobs + ConfigMaps in its
+# own namespace, plus read on Pods and Events for `cronix history`.
+# Tightened from earlier defaults — Secret access is no longer granted
+# (cronix never touches Secret resources via the API).
 rbac:
   create: true
 
 serviceAccount:
   create: true
   name: ""
+
+# Pod-level security context. Defaults satisfy PodSecurityStandards
+# "restricted" enforcement. The distroless/static-debian12:nonroot
+# base image already runs as 65532, so these are belt-and-suspenders.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level security context. Defaults satisfy PSS "restricted".
+# readOnlyRootFilesystem requires the emptyDir /tmp volume mounted by
+# the CronJob template.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# NetworkPolicy: when enabled, restricts the cronix-apply Pod to a
+# minimal egress set. Ingress is always denied (the apply CronJob
+# accepts no incoming traffic).
+#
+# enabled=false is the default to avoid surprising users on clusters
+# without a NetworkPolicy controller (a NetworkPolicy resource without
+# a controller silently does nothing). Switch to true on clusters
+# running Calico, Cilium, Antrea, or any other CNI that enforces it.
+networkPolicy:
+  enabled: false
+  egress:
+    # Allow DNS resolution. CoreDNS by convention lives in kube-system
+    # but is reachable cluster-wide.
+    dns: true
+    # Allow API-server access. Required for the reconciler to write
+    # CronJob resources.
+    kubernetesApi: true
+    # Additional egress rules. Each item is a NetworkPolicy egress
+    # rule fragment — `to:` + optional `ports:`. Add a rule here for
+    # the host serving your manifest URL. Example:
+    #
+    #   extra:
+    #     - to:
+    #         - namespaceSelector:
+    #             matchLabels:
+    #               kubernetes.io/metadata.name: billing
+    #       ports:
+    #         - port: 443
+    #           protocol: TCP
+    extra: []
 
 resources:
   requests:

@@ -1,0 +1,54 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "cronix.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cronix.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "cronix.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  # Ingress: deny everything. The cronix-apply CronJob accepts no
+  # incoming traffic. Listed explicitly so the policy is fail-safe
+  # even on cluster CNIs that default to allow.
+  ingress: []
+  egress:
+    {{- if .Values.networkPolicy.egress.dns }}
+    # DNS resolution. Allow UDP/TCP 53 to anywhere in the cluster
+    # so CoreDNS (or whatever DNS provider) is reachable.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
+    {{- if .Values.networkPolicy.egress.kubernetesApi }}
+    # Kubernetes API. The CronJob writes CronJob/ConfigMap resources
+    # via the API server; without this, `cronix apply` returns
+    # "connection refused" or times out.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              component: apiserver
+              provider: kubernetes
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    {{- end }}
+    {{- with .Values.networkPolicy.egress.extra }}
+    # User-supplied egress rules (typically the manifest URL host).
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

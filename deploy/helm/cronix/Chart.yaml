@@ -2,8 +2,8 @@ apiVersion: v2
 name: cronix
 description: Cron jobs as code — runs `cronix apply` against an in-cluster manifest endpoint to reconcile cron jobs as Kubernetes CronJobs.
 type: application
-version: 0.4.0
-appVersion: "0.4.0"
+version: 0.5.0
+appVersion: "0.10.3"
 keywords:
   - cron
   - scheduler

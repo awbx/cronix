@@ -7,12 +7,33 @@ metadata:
   labels:
     {{- include "cronix.labels" . | nindent 4 }}
 rules:
+# CronJob CRUD — cronix's primary write surface in the namespace
 - apiGroups: ["batch"]
-  resources: ["cronjobs", "jobs"]
+  resources: ["cronjobs"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Job CRUD — created indirectly by CronJobs cronix manages; cronix
+# does not create Jobs directly, but does read them for `history`
+# and may prune orphaned Jobs during `prune`.
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "delete"]
+# ConfigMap CRUD — each cronix-managed CronJob has a companion
+# ConfigMap carrying the canonical job spec, used by the trigger
+# shim at fire time.
 - apiGroups: [""]
-  resources: ["configmaps", "secrets", "events", "pods", "pods/log"]
+  resources: ["configmaps"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Pods + events — READ-ONLY, for `cronix history` to surface run
+# status and logs. cronix never creates pods or events itself
+# (the CronJob controller in kube-controller-manager does).
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "events"]
+  verbs: ["get", "list", "watch"]
+# Note: secrets are NOT granted. The reconciler resolves secret
+# refs at apply time via the SDK's own resolver (env:/file:/raw:),
+# which reads from the Pod's projected env or filesystem, not via
+# the K8s API. The trigger shim reads from a Secret only when the
+# operator explicitly mounts it into the trigger Pod.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
