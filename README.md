@@ -222,6 +222,35 @@ Quick paths to help if you're new:
 - **Add an example** for a stack we don't yet cover (Bun-only, Cloudflare Workers, AWS Lambda app, etc.).
 - **Port the SDK** — Python and Ruby SDKs are wide open. The conformance vectors give you a green-light test suite.
 
+## Verify a release
+
+Every release is signed with [cosign](https://github.com/sigstore/cosign) keyless, using the OIDC identity of this repository's GitHub Actions release workflow. There is no public key to track and no secret to compromise — the signature is bound to the workflow itself via Sigstore's Fulcio CA.
+
+**Verify a downloaded binary.** Grab `checksums.txt`, `checksums.txt.sig`, and `checksums.txt.pem` from the release page alongside your binary:
+
+```sh
+cosign verify-blob \
+  --certificate-identity-regexp 'https://github.com/awbx/cronix/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  checksums.txt
+
+# Then confirm your binary's hash is in the (now-trusted) checksums file:
+sha256sum -c --ignore-missing checksums.txt
+```
+
+**Verify a container image** (signatures are attached in-registry):
+
+```sh
+cosign verify \
+  --certificate-identity-regexp 'https://github.com/awbx/cronix/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/awbx/cronix:v1.0.0-amd64
+```
+
+Both commands print the signing certificate's identity. If the identity does not start with `https://github.com/awbx/cronix/`, the artifact was not built by this project — do not use it.
+
 ## License
 
 Apache 2.0 © Abdelhadi Sabani — see [LICENSE](./LICENSE). Releases before v1.0.0 were distributed under MIT; the historical text lives at [LICENSE-MIT](./LICENSE-MIT).
