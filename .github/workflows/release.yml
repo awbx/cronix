@@ -101,7 +101,7 @@ jobs:
           gh release download "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --dir verify-dist
-      - name: Verify provenance against every binary and the checksum file
+      - name: Verify provenance against every binary
         working-directory: verify-dist
         run: |
           set -euo pipefail
@@ -110,9 +110,15 @@ jobs:
             echo "::error::expected provenance file $PROVENANCE missing from release assets"
             exit 1
           fi
+          # checksums.txt is the SOURCE of the provenance subject set
+          # (we base64'd it and handed it to the generator). It is not
+          # itself a subject of the provenance — a file can't be in its
+          # own checksum list. Cosign signs checksums.txt; SLSA covers
+          # the binaries that checksums.txt enumerates. Do not add
+          # checksums.txt to this loop.
           shopt -s nullglob
           verified=0
-          for f in cronix_*.tar.gz cronix_*.zip cronix_*.deb cronix_*.rpm cronix_*.apk checksums.txt; do
+          for f in cronix_*.tar.gz cronix_*.zip cronix_*.deb cronix_*.rpm cronix_*.apk; do
             echo "::group::verify $f"
             slsa-verifier verify-artifact "$f" \
               --provenance-path "$PROVENANCE" \

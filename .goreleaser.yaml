@@ -200,13 +200,14 @@ release:
       --source-tag {{ .Tag }}
     ```
 
-    **Cosign — verify a container image:**
+    **Cosign — verify a container image** (image tags omit the `v`, since
+    GoReleaser's `.Version` is the bare semver):
 
     ```sh
     cosign verify \
       --certificate-identity-regexp 'https://github.com/awbx/cronix/.*' \
       --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-      ghcr.io/awbx/cronix:{{ .Tag }}-amd64
+      ghcr.io/awbx/cronix:{{ .Version }}-amd64
     ```
 
     **npm — every @awbx/cronix-* package has its own SLSA-shaped
