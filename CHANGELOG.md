@@ -2,6 +2,12 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.10.1] - 2026-05-19
+
+### Bug Fixes
+
+- fix(supply-chain): SLSA smoke shouldn't verify checksums.txt; image tag has no v prefix (#30) (`dd31bbd`)
+
 ## [0.10.0] - 2026-05-19
 
 ### Features
