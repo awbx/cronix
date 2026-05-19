@@ -122,6 +122,42 @@ jobs:
       upload-assets: true
       provenance-name: cronix-${{ github.ref_name }}.intoto.jsonl
 
+  verify-images:
+    name: Verify multi-arch image manifests
+    needs: [goreleaser]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Inspect manifests on both registries
+        # Catches the regression where docker_manifests: gets removed
+        # from .goreleaser.yaml or where one of the per-arch builds
+        # silently fails to push. Without this, the next release would
+        # quietly publish single-arch tags and adopters on the other
+        # arch would hit "no matching manifest" at pull time.
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${VERSION#v}"
+          for IMAGE in \
+            "ghcr.io/awbx/cronix:${IMAGE_TAG}" \
+            "docker.io/awbx/cronix:${IMAGE_TAG}"; do
+            echo "::group::manifest inspect $IMAGE"
+            JSON=$(docker manifest inspect "$IMAGE")
+            echo "$JSON"
+            PLATFORMS=$(echo "$JSON" \
+              | jq -r '[.manifests[] | "\(.platform.os)/\(.platform.architecture)"] | sort | unique | join(",")')
+            for want in linux/amd64 linux/arm64; do
+              if ! echo "$PLATFORMS" | grep -q "$want"; then
+                echo "::error::$IMAGE is missing platform $want (got: $PLATFORMS)"
+                exit 1
+              fi
+            done
+            echo "::notice::$IMAGE serves $PLATFORMS"
+            echo "::endgroup::"
+          done
+
   verify-provenance:
     name: Verify SLSA provenance
     needs: [provenance]

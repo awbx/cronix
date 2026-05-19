@@ -30,6 +30,12 @@ The reconciler `CronJob` is created only when `manifestUrl` is set; without it, 
 | `serviceAccount.create` | `true` | Set false to bind to a pre-existing SA |
 | `serviceAccount.name` | `""` | When `create=false`, the SA name to bind in the RoleBinding |
 
+## Architecture
+
+The chart pulls `awbx/cronix:<AppVersion>` from Docker Hub (or `ghcr.io/awbx/cronix:<AppVersion>` if you override `image.repository`). Both registries serve a **multi-arch manifest list** covering `linux/amd64` and `linux/arm64`; the cluster's container runtime picks the right variant per node. Mixed-arch clusters (an x86_64 control plane with arm64 workers, for example) require no chart changes — every Pod that lands on an arm64 node pulls the arm64 image transparently.
+
+If you need to pin a specific arch (rare), override `image.repository` to the per-arch tag explicitly, e.g. `awbx/cronix` + `image.tag: 0.10.2-arm64`. Per-arch tags carry the same cosign signature and SBOM attestation as the manifest-list pointer.
+
 ## What it does NOT do
 
 - It does **not** declare individual cron jobs — those live in the application's manifest (served at `/.well-known/cron-manifest` by `@awbx/cronix-sdk`). The chart just runs the reconciler that turns that manifest into K8s resources.
