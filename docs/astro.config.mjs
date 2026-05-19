@@ -56,6 +56,7 @@ export default defineConfig({
           collapsed: false,
           items: [
             { label: "Production runbook", slug: "operations/runbook" },
+            { label: "Observability", slug: "operations/observability" },
           ],
         },
         {

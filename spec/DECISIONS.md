@@ -506,3 +506,140 @@ not permitted under the amended GOVERNANCE.md clause. Any future
 relicense to a license less permissive than Apache 2.0 would require
 both unanimous maintainer agreement and the full 30-day comment
 window, regardless of contributor count.
+
+---
+
+## D-037: OpenTelemetry trace shape for `cronix trigger`
+Date: 2026-05-19
+Status: Locked
+Resolves: [Q-001](./OPEN_QUESTIONS.md#q-001-opentelemetry-trace-shape-for-cronix-trigger--d-037)
+
+Decision: `cronix trigger` emits one OpenTelemetry trace per fire when
+the `--otel` flag is set, comprising:
+
+- A **root span** `cronix.trigger.fire` covering the full fire (lock
+  acquisition through final HTTP response or retry exhaustion).
+- A **child span per HTTP attempt** named `cronix.trigger.attempt`.
+  Span count equals the number of attempts the retry policy ran;
+  successful fire is one child, retries-exhausted is `max_attempts`
+  children.
+- A **child span for lock acquisition** named `cronix.trigger.lock`,
+  emitted **only** when the job's `concurrency_scope` is `global`
+  (Redis round-trip). Host-scope flock acquisitions add a span event
+  to the root span instead of a child span; they're <1ms and don't
+  warrant the storage overhead.
+
+The trace is exported via OTLP/HTTP to the endpoint named by
+`OTEL_EXPORTER_OTLP_ENDPOINT`, with credentials and resource
+attributes per the standard
+[OTel SDK environment variables](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/).
+
+### Attribute set per span
+
+Cronix-specific attributes are namespaced under `cronix.*`; HTTP
+attributes follow
+[Semantic Conventions for HTTP](https://opentelemetry.io/docs/specs/semconv/http/).
+
+**`cronix.trigger.fire` (root span)**:
+
+| Attribute | Type | Notes |
+|---|---|---|
+| `cronix.app` | string | App ID from the job spec |
+| `cronix.job` | string | Job name from the job spec |
+| `cronix.run_id` | string | UUIDv7, constant across retry attempts (matches the `Cronix-Run-Id` HTTP header) |
+| `cronix.schedule` | string | The 5-field cron expression that produced this fire |
+| `cronix.intended_fire_time` | string (RFC3339) | When the host scheduler intended to fire |
+| `cronix.actual_fire_time` | string (RFC3339) | When the shim actually started |
+| `cronix.backend` | string | `crontab` / `systemd-timer` / `kubernetes` / `aws-scheduler` / `vercel` |
+| `cronix.timeout_seconds` | int | Per-attempt HTTP timeout from the job spec |
+| `cronix.concurrency_policy` | string | `Allow` / `Forbid` / `Replace` |
+| `cronix.concurrency_scope` | string | `host` / `global` |
+| `cronix.max_attempts` | int | From the job's retry policy |
+| `cronix.outcome` | string | `success` / `app_rejected` / `retries_exhausted` / `lock_contended` / `internal_error` (set at span end) |
+| `cronix.attempts_made` | int | Final count when the span closes |
+
+Status of the root span: `OK` on `outcome=success`, `ERROR` on any
+other terminal outcome.
+
+**`cronix.trigger.attempt` (child span, one per HTTP attempt)**:
+
+| Attribute | Type | Notes |
+|---|---|---|
+| `cronix.attempt` | int | 1-indexed |
+| `http.request.method` | string | Per HTTP semconv |
+| `url.full` | string | Per HTTP semconv |
+| `http.response.status_code` | int | When the response arrived |
+| `cronix.retry_reason` | string | `5xx` / `network` / `timeout` (set on retry; omitted on the final attempt) |
+| `cronix.backoff_seconds` | float | Sleep applied before this attempt (0 for attempt 1) |
+
+Status: `OK` for 2xx, `ERROR` for everything else (including 4xx,
+which is a non-retried failure mode).
+
+**`cronix.trigger.lock` (child span, only when `concurrency_scope: global`)**:
+
+| Attribute | Type | Notes |
+|---|---|---|
+| `cronix.lock.backend` | string | `redis` in v1; pluggable later |
+| `cronix.lock.scope` | string | always `global` (the host-scope case emits an event, not a span) |
+| `cronix.lock.key` | string | Format: `cronix:lock:<app>:<job>` |
+| `cronix.lock.outcome` | string | `acquired` / `contended` |
+| `cronix.lock.ttl_seconds` | int | Lock TTL (set to the job's `timeout_seconds`) |
+
+Status: `OK` on `acquired`, `ERROR` on `contended` (which propagates
+to the root span as `outcome=lock_contended`).
+
+### Span events (alternative to child spans)
+
+For events too short-lived to warrant a child span:
+
+- **Host-scope flock acquisition**: event `cronix.lock.acquired` on
+  the root span with attribute `cronix.lock.scope=host` and
+  `cronix.lock.duration_ms=<int>`.
+- **HMAC signing**: event `cronix.sign.completed` on each
+  `cronix.trigger.attempt` span (no duration attribute — signing is
+  consistently <1ms, not worth measuring).
+- **Secret resolution**: event `cronix.secrets.resolved` on the root
+  span with attribute `cronix.secrets.count=<int>`.
+
+### Propagation
+
+The shim **injects** a W3C `traceparent` header into the outbound HTTP
+request via `otelhttp.NewTransport`. Downstream applications that are
+themselves OTel-instrumented will inherit the trace context, so the
+handler's spans chain off `cronix.trigger.attempt` in the trace tree.
+
+The shim does **not** extract a `traceparent` from the manifest
+endpoint response — there is no inbound trace context to propagate
+because the host scheduler is not OTel-aware.
+
+### Rationale
+
+Option B from Q-001 (span-per-attempt) was chosen over option A
+(single span with events) because:
+
+- Adopters' standard OTel UIs render the waterfall correctly without
+  needing to know about the event structure.
+- HTTP semconv conventions exist for `http.attempt` already, so each
+  attempt naturally fits an HTTP-semconv-shaped span.
+- Retries are exactly the case where per-attempt latency matters — a
+  single span averages everything; child spans expose the
+  problematic attempt directly.
+
+The lock-as-span-only-when-global compromise (vs option C's
+unconditional lock + sign + attempts) keeps the trace tree shallow
+for the 90% case (local flock, ~1ms) and only spends storage on the
+case where lock acquisition is meaningful (global Redis, 10-50ms).
+
+### Implementation deferred
+
+This decision locks the **spec** for the trace shape. The Go
+implementation (the `--otel` flag, the otelhttp wrapper, the OTLP
+exporter wiring, the conditional lock-span logic) is tracked
+separately so this PR stays spec-only and reviewable as a
+contract change.
+
+Until the implementation lands, the trace shape documented above is
+the contract any out-of-tree implementation must conform to. SDKs
+shipping their own OTel emission (TypeScript, future Rust/Python)
+follow the same attribute set so cross-language traces collate
+identically.
