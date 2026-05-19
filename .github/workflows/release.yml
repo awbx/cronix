@@ -40,6 +40,13 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
+      - name: Install syft
+        # syft generates the SBOM for each archive (via the sboms: block
+        # in .goreleaser.yaml) and for each container image (via the
+        # post-goreleaser attest step below). Pinned to the
+        # sbom-action's download-syft sub-action — well-maintained and
+        # caches the binary.
+        uses: anchore/sbom-action/download-syft@v0.18.0
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -62,13 +69,44 @@ jobs:
           # When unset, goreleaser still produces the formula locally
           # but skips uploading — see brews.skip_upload in .goreleaser.yaml.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Attach SPDX SBOM attestations to container images
+        # GoReleaser's sboms: block produces SBOMs for archives but not
+        # for images. syft generates one per image and cosign attests
+        # it with the same OIDC identity that signed the image
+        # earlier (docker_signs in .goreleaser.yaml). Verifiable via
+        # `cosign verify-attestation --type spdxjson <image>`.
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # GoReleaser image tags strip the leading v from the git ref
+          # (see .goreleaser.yaml dockers: image_templates use .Version).
+          IMAGE_TAG="${VERSION#v}"
+          for IMAGE in \
+            "ghcr.io/awbx/cronix:${IMAGE_TAG}-amd64" \
+            "ghcr.io/awbx/cronix:${IMAGE_TAG}-arm64" \
+            "docker.io/awbx/cronix:${IMAGE_TAG}-amd64" \
+            "docker.io/awbx/cronix:${IMAGE_TAG}-arm64"; do
+            echo "::group::sbom + attest $IMAGE"
+            SBOM_FILE="/tmp/$(basename "$IMAGE" | tr ':/' '__').sbom.spdx.json"
+            syft scan "$IMAGE" --output "spdx-json=$SBOM_FILE"
+            cosign attest \
+              --predicate "$SBOM_FILE" \
+              --type spdxjson \
+              --yes \
+              "$IMAGE"
+            echo "::endgroup::"
+          done
       - name: Generate artifact hashes for SLSA provenance
         id: hash
         working-directory: dist
         run: |
           # GoReleaser's checksums.txt is already <sha256>  <filename> per
           # line — exactly the format slsa-github-generator wants. Base64
-          # the whole file and hand it off as the subject set.
+          # the whole file and hand it off as the subject set. SBOMs are
+          # included in checksums.txt automatically by GoReleaser (sboms:
+          # produces artifacts that flow through the checksum stage), so
+          # they inherit SLSA attestation transitively.
           HASHES=$(base64 -w0 checksums.txt)
           echo "hashes=$HASHES" >> "$GITHUB_OUTPUT"
 
@@ -118,7 +156,12 @@ jobs:
           # checksums.txt to this loop.
           shopt -s nullglob
           verified=0
-          for f in cronix_*.tar.gz cronix_*.zip cronix_*.deb cronix_*.rpm cronix_*.apk; do
+          # SBOM files (cronix_*.sbom.spdx.json) are subjects of the
+          # provenance too — checksums.txt includes them, so the
+          # provenance does too. Verify them so a future GoReleaser bump
+          # that changes SBOM naming or SBOM-in-checksum behavior fails
+          # the smoke test rather than silently dropping coverage.
+          for f in cronix_*.tar.gz cronix_*.zip cronix_*.deb cronix_*.rpm cronix_*.apk cronix_*.sbom.spdx.json; do
             echo "::group::verify $f"
             slsa-verifier verify-artifact "$f" \
               --provenance-path "$PROVENANCE" \

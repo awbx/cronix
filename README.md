@@ -268,6 +268,29 @@ cosign verify \
   ghcr.io/awbx/cronix:<VERSION>-amd64
 ```
 
+### Inspect the SBOM
+
+Every release archive ships with a companion `*.sbom.spdx.json` file — an [SPDX](https://spdx.dev/) software bill of materials enumerating every dependency, its version, and its declared license. The SBOM file is in `checksums.txt` and therefore inherits the SLSA provenance from the binary it documents.
+
+```sh
+# Quick look at packages and licenses
+jq '.packages[] | {name, versionInfo, licenseConcluded}' \
+  cronix_<VERSION>_linux_amd64.tar.gz.sbom.spdx.json
+```
+
+Container images carry an SBOM attestation in-registry, signed under the same workflow identity. Verify and extract it:
+
+```sh
+cosign verify-attestation \
+  --type spdxjson \
+  --certificate-identity-regexp 'https://github.com/awbx/cronix/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/awbx/cronix:<VERSION>-amd64 \
+  | jq -r '.payload | @base64d | fromjson | .predicate.packages[] | "\(.name) \(.versionInfo)"'
+```
+
+If the attestation is missing or the identity doesn't match, the image is not from this project.
+
 ### Verify an npm package
 
 Every `@awbx/cronix-*` package is published with `npm publish --provenance`, which attaches an npm-native attestation to this same workflow identity. The npm CLI checks it automatically:
