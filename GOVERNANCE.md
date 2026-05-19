@@ -104,7 +104,7 @@ For Code-of-Conduct issues, see [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md).
 
 ## Code of Conduct enforcement
 
-Reports go to **abellaismail@gmail.com** (the project's primary
+Reports go to **asabani.work@gmail.com** (the project's primary
 maintainer). All maintainers are required to act on reports within 72
 hours, even if "act on" means acknowledging receipt and explaining
 escalation.

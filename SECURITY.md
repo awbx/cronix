@@ -11,7 +11,7 @@ If you find a security issue in cronix — particularly anything that:
 
 … please report it privately rather than filing a public issue.
 
-**Email**: abellaismail@gmail.com (PGP key on request).
+**Email**: asabani.work@gmail.com (PGP key on request).
 
 Include:
 

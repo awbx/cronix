@@ -10,7 +10,7 @@ repository and in any public space where they represent the project.
 ## Reporting
 
 If you experience or witness behavior that violates the Code of Conduct,
-contact **abellaismail@gmail.com**.
+contact **asabani.work@gmail.com**.
 
 All reports are handled confidentially. Maintainers will acknowledge
 receipt within 72 hours and follow up with the reporter on next steps.

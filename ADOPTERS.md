@@ -20,7 +20,7 @@ you share is entirely up to you.
    - **Contact** — GitHub handle, email, or "private" if you'd rather not
      publish one
 
-2. If you can't make your usage public, email **abellaismail@gmail.com**
+2. If you can't make your usage public, email **asabani.work@gmail.com**
    instead. We can list you as "Confidential adopter (Fortune 500
    logistics company)" or similar, with no other identifying detail.
 
