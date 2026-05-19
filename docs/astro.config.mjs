@@ -52,6 +52,13 @@ export default defineConfig({
           ],
         },
         {
+          label: "Operations",
+          collapsed: false,
+          items: [
+            { label: "Production runbook", slug: "operations/runbook" },
+          ],
+        },
+        {
           label: "CLI",
           collapsed: false,
           items: [
