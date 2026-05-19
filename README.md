@@ -70,8 +70,10 @@ curl -fsSL https://raw.githubusercontent.com/awbx/cronix/main/install.sh \
 # Go developers
 go install github.com/awbx/cronix/go/cmd/cronix@latest
 
-# Docker
-docker pull awbx/cronix
+# Docker — multi-arch (linux/amd64 + linux/arm64) manifest list
+docker pull awbx/cronix:<VERSION>
+# or, equivalently
+docker pull ghcr.io/awbx/cronix:<VERSION>
 ```
 
 Verify:
