@@ -35,6 +35,7 @@ export default defineConfig({
             { label: "Retries & timeouts", slug: "concepts/retries" },
             { label: "Trigger lifecycle", slug: "concepts/trigger-lifecycle" },
             { label: "Drift detection", slug: "concepts/drift" },
+            { label: "State management", slug: "concepts/state" },
           ],
         },
         {
@@ -42,6 +43,7 @@ export default defineConfig({
           collapsed: false,
           items: [
             { label: "Overview", slug: "backends/overview" },
+            { label: "Coverage strategy", slug: "backends/coverage" },
             { label: "crontab", slug: "backends/crontab" },
             { label: "systemd-timer", slug: "backends/systemd" },
             { label: "Kubernetes", slug: "backends/kubernetes" },
