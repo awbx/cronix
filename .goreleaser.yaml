@@ -40,6 +40,35 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# Cosign keyless signing of the checksums file (D-036, issue #2).
+# The OIDC identity comes from the GitHub Actions release workflow —
+# `id-token: write` permission must be set in release.yml. With the
+# checksum file signed, any binary that hashes to a line inside it is
+# transitively attested by the same OIDC identity.
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    certificate: "${artifact}.pem"
+    args:
+      - "sign-blob"
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    output: true
+
+# Cosign keyless signing of container images. Signatures are attached
+# to the images in their respective registries; verification does not
+# require pulling the image — see README §Verify a release.
+docker_signs:
+  - cmd: cosign
+    artifacts: images
+    args:
+      - "sign"
+      - "${artifact}"
+      - "--yes"
+    output: true
+
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
@@ -137,3 +166,36 @@ changelog:
       - "^docs:"
       - "^test:"
       - "^chore:"
+
+release:
+  footer: |
+    ## Verify this release
+
+    Every release artifact is signed with [cosign](https://github.com/sigstore/cosign)
+    keyless from this repository's GitHub Actions release workflow.
+
+    Verify the binary you downloaded:
+
+    ```sh
+    cosign verify-blob \
+      --certificate-identity-regexp 'https://github.com/awbx/cronix/.*' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      --certificate checksums.txt.pem \
+      --signature checksums.txt.sig \
+      checksums.txt
+
+    # Then confirm your downloaded binary's hash is in checksums.txt:
+    sha256sum -c --ignore-missing checksums.txt
+    ```
+
+    Verify a container image:
+
+    ```sh
+    cosign verify \
+      --certificate-identity-regexp 'https://github.com/awbx/cronix/.*' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      ghcr.io/awbx/cronix:{{ .Tag }}-amd64
+    ```
+
+    See [README §Verify a release](https://github.com/awbx/cronix#verify-a-release)
+    for the full verification reference.

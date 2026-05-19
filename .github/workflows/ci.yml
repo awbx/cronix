@@ -152,6 +152,15 @@ jobs:
           cache-dependency-path: go/go.sum
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
+      # Validate the FULL goreleaser config including signs/docker_signs
+      # blocks (issue #2). `build --snapshot` only exercises the build
+      # pipeline; `check` parses every section so a malformed cosign
+      # config fails the PR rather than the next tagged release.
+      - name: Validate goreleaser config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
