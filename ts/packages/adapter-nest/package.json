@@ -1,6 +1,6 @@
 {
   "name": "@awbx/cronix-adapter-nest",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "NestJS adapter for @awbx/cronix-sdk. Thin wrapper around the Express adapter for the default Nest platform.",
   "type": "module",
   "main": "./dist/index.cjs",

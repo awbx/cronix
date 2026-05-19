@@ -2,6 +2,12 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.10.3] - 2026-05-19
+
+### Features
+
+- feat(supply-chain): verify multi-arch image manifests post-release (#5) (#33) (`0cf5293`)
+
 ## [0.10.2] - 2026-05-19
 
 ### Features

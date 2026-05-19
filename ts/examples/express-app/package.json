@@ -1,6 +1,6 @@
 {
   "name": "@cronix-example/express-app",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "private": true,
   "description": "Wiring @awbx/cronix-sdk into Express in ~30 lines.",
   "type": "module",

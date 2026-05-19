@@ -1,6 +1,6 @@
 {
   "name": "@cronix-example/fastify-app",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "private": true,
   "description": "Wiring @awbx/cronix-sdk into Fastify.",
   "type": "module",
