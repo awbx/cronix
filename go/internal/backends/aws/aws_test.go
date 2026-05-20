@@ -147,6 +147,7 @@ func TestCreateInstallsOneSchedulePerScheduleIndex(t *testing.T) {
 	got := sc.schedules["cronix-billing-reconcile-0"]
 	if got == nil {
 		t.Fatalf("missing cronix-billing-reconcile-0")
+		return // satisfy staticcheck SA5011 — t.Fatalf kills the goroutine but is not annotated as such
 	}
 	if want := "cron(0 * * * ? *)"; awssdk.ToString(got.ScheduleExpression) != want {
 		t.Errorf("@hourly expr = %q, want %q", awssdk.ToString(got.ScheduleExpression), want)

@@ -65,11 +65,11 @@ const (
 
 // Outcome values. Locked by D-037.
 const (
-	OutcomeSuccess           = "success"
-	OutcomeAppRejected       = "app_rejected"
-	OutcomeRetriesExhausted  = "retries_exhausted"
-	OutcomeLockContended     = "lock_contended"
-	OutcomeInternalError     = "internal_error"
+	OutcomeSuccess          = "success"
+	OutcomeAppRejected      = "app_rejected"
+	OutcomeRetriesExhausted = "retries_exhausted"
+	OutcomeLockContended    = "lock_contended"
+	OutcomeInternalError    = "internal_error"
 )
 
 // resolveTracer returns the Options-supplied tracer, or a Tracer from
@@ -140,14 +140,6 @@ func isTimeoutErr(err error) bool {
 // to match the D-037 status convention.
 func setSpanError(s trace.Span, outcome string) {
 	s.SetStatus(codes.Error, outcome)
-}
-
-// setSpanOK marks a span as OK. The OTel convention is that OK is set
-// explicitly only when overriding a previously-set error; for normal
-// success we leave Unset (which UIs render as OK). We still expose the
-// helper so the success path is symmetric.
-func setSpanOK(s trace.Span) {
-	s.SetStatus(codes.Ok, "")
 }
 
 // timeAttr converts a time.Time to an RFC3339 string attribute. Zero

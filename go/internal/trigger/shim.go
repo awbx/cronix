@@ -207,7 +207,7 @@ func Run(ctx context.Context, opts Options) (res Result) {
 		isGlobalScope := policy.ConcurrencyScope == "global"
 		lockStart := now()
 		var lockSpan trace.Span
-		var lockCtx context.Context = ctx
+		lockCtx := ctx
 		if isGlobalScope {
 			lockCtx, lockSpan = tracer.Start(ctx, spanLock,
 				trace.WithSpanKind(trace.SpanKindInternal),
