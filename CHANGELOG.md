@@ -2,6 +2,22 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.11.0] - 2026-05-20
+
+### Features
+
+- feat(trigger): --otel flag emits D-037 trace shape (#37) (#39) (`f0fa501`)
+- feat(helm): PSS-restricted, NetworkPolicy, RBAC trim (#9) (#36) (`d69b043`)
+
+### Docs
+
+- docs: production runbook (#8) (#35) (`089fc04`)
+- docs: state management + backend coverage strategy (#19, #22) (#34) (`21abc36`)
+
+### Other
+
+- spec: OpenTelemetry trace shape for cronix trigger (D-037, #7) (#38) (`e44ca3c`)
+
 ## [0.10.3] - 2026-05-19
 
 ### Features
