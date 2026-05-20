@@ -135,7 +135,10 @@ jobs:
           fi
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1.6
+          # Bumped from v2.1.6 because that binary is built with Go 1.24
+          # and the OTel SDK (issue #37) requires Go 1.25 in go.mod's
+          # toolchain. v2.4.0 is the first release built against 1.25.
+          version: v2.4.0
           working-directory: go
 
   goreleaser-snapshot:

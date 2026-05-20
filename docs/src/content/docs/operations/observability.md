@@ -144,9 +144,9 @@ The attribute set defined here is the contract that **every cronix-compatible SD
 
 ## Implementation status
 
-The Go reconciler's `--otel` flag is **planned**, not shipped — the spec at [D-037](https://github.com/awbx/cronix/blob/main/spec/DECISIONS.md#d-037-opentelemetry-trace-shape-for-cronix-trigger) is the contract any current or future implementation conforms to. Track implementation progress on the issue tracker (`area/trigger` + `kind/feature` labels).
+Shipped in `cronix trigger --otel` since [v0.11.0](https://github.com/awbx/cronix/releases). Pass `--backend <name>` to populate the `cronix.backend` attribute; the host scheduler invoking the shim should set it (e.g., the Helm chart sets `--backend=kubernetes`, the systemd unit sets `--backend=systemd-timer`).
 
-Until the Go implementation lands, the TypeScript SDK's in-process trigger path emits this trace shape today — you can use it for adopters running cronix as a library rather than as a separate process.
+The TypeScript SDK's in-process trigger path emits the same trace shape — adopters running cronix as a library, not a separate process, get identical attributes and naturally chain into the same OTel pipeline.
 
 ## Going deeper
 
