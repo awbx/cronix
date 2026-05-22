@@ -18,10 +18,10 @@ import (
 // implementations).
 func newAdoptCmd() *cobra.Command {
 	var (
-		opts       backendOpts
+		opts        backendOpts
 		manifestSrc string
-		dryRun     bool
-		output     string
+		dryRun      bool
+		output      string
 	)
 	cmd := &cobra.Command{
 		Use:   "adopt <app>.<job>",
