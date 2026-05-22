@@ -57,6 +57,7 @@ export default defineConfig({
           items: [
             { label: "Production runbook", slug: "operations/runbook" },
             { label: "Observability", slug: "operations/observability" },
+            { label: "Migrating from hand-edited crontab", slug: "operations/migrating-from-crontab" },
           ],
         },
         {

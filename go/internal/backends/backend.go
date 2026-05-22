@@ -106,3 +106,58 @@ type HistoryEntry struct {
 	Source string
 	Detail string
 }
+
+// Adopter is an optional Backend capability — adopting a pre-existing
+// scheduler entry that already invokes cronix trigger (but lacks the
+// D-026 ownership markers) into cronix's managed set, without
+// disrupting the entry semantically.
+//
+// Backends that do not implement Adopter cannot be adopted into; the
+// CLI surfaces a clear error in that case. Each v1 backend ships
+// Adopter support in its own follow-up PR.
+type Adopter interface {
+	// Adopt searches the backend for an entry that matches the manifest
+	// job and applies the cronix ownership markers without re-creating
+	// it. Returns AdoptResult describing what was found and what action
+	// was taken.
+	//
+	// When the candidate entry exists but diverges from the manifest
+	// (different schedule, different command line, etc.), Adopt MUST
+	// leave the entry untouched and return AdoptResult with
+	// Diverged=true plus a human-readable description of every
+	// divergence. The caller can then choose to Delete+Create instead.
+	//
+	// When opts.DryRun is true, Adopt MUST NOT modify the backend.
+	Adopt(ctx context.Context, app string, job manifest.NormalizedJob, opts AdoptOpts) (AdoptResult, error)
+}
+
+// AdoptOpts narrows an Adopt call.
+type AdoptOpts struct {
+	// DryRun means "report what would happen without modifying the backend."
+	DryRun bool
+}
+
+// AdoptResult is the outcome of an Adopt call.
+type AdoptResult struct {
+	// Found means the backend has at least one candidate entry that
+	// looks like it could be adopted (e.g. a crontab line invoking
+	// `cronix trigger <app>.<job>`).
+	Found bool
+	// Adopted means ownership markers were applied. False when DryRun
+	// or when Diverged.
+	Adopted bool
+	// AlreadyManaged means the entry was already a cronix-owned entry —
+	// adopt was a no-op. Not an error; common when re-running adopt.
+	AlreadyManaged bool
+	// Diverged means a candidate was found but it disagrees with the
+	// manifest in a way that would change semantics if cronix took over
+	// management. Divergences enumerates each difference.
+	Diverged bool
+	// Divergences is a human-readable list of differences (cron
+	// expression, command-line tail, etc.). Empty when Diverged=false.
+	Divergences []string
+	// Entries enumerates the entries that were (or would be) adopted.
+	// When DryRun=true these describe the candidate state; otherwise
+	// they describe the post-adopt state.
+	Entries []ManagedEntry
+}
