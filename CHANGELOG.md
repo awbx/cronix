@@ -2,6 +2,12 @@
 
 All notable changes to cronix are documented here. Generated from `git log`; see scripts/generate-changelog.mjs.
 
+## [0.12.0] - 2026-05-22
+
+### Features
+
+- feat(reconciler): cronix adopt for crontab backend (#11) (#44) (`a07f405`)
+
 ## [0.11.0] - 2026-05-20
 
 ### Features

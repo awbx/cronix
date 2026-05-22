@@ -1,6 +1,6 @@
 {
   "name": "@awbx/cronix-sdk",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "App-side SDK for cronix: declare cron jobs in code, build the manifest, verify signed triggers. Framework-agnostic — works with anything that exposes a Web Request (Hono, Bun, Workers, Vercel) or via a sister adapter package for Express / Fastify / Koa / NestJS.",
   "type": "module",
   "main": "./dist/index.cjs",
