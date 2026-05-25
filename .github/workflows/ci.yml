@@ -110,6 +110,41 @@ jobs:
           git diff --exit-code spec/manifest.schema.json spec/auth-vectors.json || \
             (echo "spec/manifest.schema.json or spec/auth-vectors.json is out of date — run 'pnpm gen:schema' and 'pnpm gen:auth-vectors' from ts/" && exit 1)
 
+  conformance:
+    name: Conformance (TS adapter)
+    # Runs the language-neutral conformance runner against the
+    # TypeScript SDK adapter. Issue #6 ships this as the reference;
+    # the Go adapter follows as a tracked follow-up. When the Go
+    # adapter lands, fan this out as a matrix entry per language.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+          cache-dependency-path: go/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: ts/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ts/pnpm-lock.yaml
+      - name: Install TS deps
+        working-directory: ts
+        run: pnpm install --frozen-lockfile
+      - name: Build SDK (produces dist/ for the adapter to import)
+        working-directory: ts/packages/sdk
+        run: pnpm build
+      - name: Run conformance vectors against the TypeScript adapter
+        working-directory: go
+        run: |
+          go run ./cmd/conformance \
+            --vectors ../spec \
+            --adapter "node ../ts/packages/sdk/test/conformance-adapter.mjs"
+
   go:
     name: Go
     runs-on: ubuntu-latest
