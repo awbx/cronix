@@ -1,0 +1,79 @@
+name: Integration
+
+# Real-backend integration tests. Each backend lights up its native
+# scheduler in CI and runs the `integration` build-tagged tests
+# against it. Gated by `paths:` so docs-only PRs don't pay the cost.
+#
+# Per-backend status (issue #10):
+#   kubernetes      ✅ shipped in this workflow
+#   aws-scheduler   📋 #45 (LocalStack)
+#   systemd-timer   📋 #46 (Fedora-in-Docker)
+#   crontab         📋 #47 (scratch-user crontab on the runner)
+#   vercel          📋 #48 (recorded HTTP cassette)
+
+on:
+  pull_request:
+    paths:
+      - "go/**"
+      - ".github/workflows/integration.yml"
+  push:
+    branches: [main]
+    paths:
+      - "go/**"
+      - ".github/workflows/integration.yml"
+
+permissions:
+  contents: read
+
+# Cancel an in-progress run when a new commit lands on the same ref.
+# Each kind cluster takes ~30s to spin up; killing the stale run is
+# cheaper than letting two race.
+concurrency:
+  group: integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  kubernetes:
+    name: kubernetes (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+          cache-dependency-path: go/go.sum
+
+      # kind is the canonical "Kubernetes-in-Docker" project the K8s SIG
+      # maintains; helm/kind-action wires it up via a single step,
+      # publishes the kubeconfig, and waits for the API server to be
+      # ready. Pinning to a recent stable; bumps live in this file.
+      - name: Start kind cluster
+        uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: cronix-it
+          wait: 60s
+
+      - name: Verify cluster is up
+        run: |
+          kubectl cluster-info
+          kubectl get nodes -o wide
+
+      - name: Run kubernetes integration tests
+        working-directory: go
+        # helm/kind-action exports KUBECONFIG into the job environment
+        # automatically. No override needed — env.HOME doesn't expand at
+        # workflow-definition time, so an explicit override would
+        # produce a literal "/.kube/config" (missing the HOME prefix)
+        # and the tests would t.Fatal.
+        run: |
+          go test -tags integration -v -timeout 5m \
+            -run Integration \
+            ./internal/backends/kubernetes/...
