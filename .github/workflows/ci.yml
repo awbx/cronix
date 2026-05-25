@@ -162,9 +162,14 @@ jobs:
       - name: Validate goreleaser config
         uses: goreleaser/goreleaser-action@v6
         with:
-          version: "~> v2"
+          # Pinned to v2.15.x because v2.16+ exits non-zero on
+          # DEPRECATED warnings (dockers/dockers_v2, brews/
+          # homebrew_casks migrations). The migrations themselves are
+          # tracked separately; pin until they land so unrelated PRs
+          # aren't blocked on a cleanup.
+          version: "~> v2.15"
           args: check
       - uses: goreleaser/goreleaser-action@v6
         with:
-          version: "~> v2"
+          version: "~> v2.15"
           args: build --snapshot --clean

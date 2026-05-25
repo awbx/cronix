@@ -61,7 +61,10 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: goreleaser/goreleaser-action@v6
         with:
-          version: "~> v2"
+          # Pinned to v2.15.x — see the matching pin + comment in
+          # .github/workflows/ci.yml. Bump together once dockers_v2 +
+          # homebrew_casks migrations land.
+          version: "~> v2.15"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
